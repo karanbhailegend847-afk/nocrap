@@ -251,7 +251,8 @@ export default function Clans({ userStreak }) {
                     className="explore-join-btn joined"
                     onClick={(e) => handleJoinToggle(clan.id, e)}
                   >
-                    Joined
+                    <span className="joined-text">Joined</span>
+                    <span className="leave-text">Leave</span>
                   </button>
                 </div>
                 <p className="explore-card-desc">{clan.description}</p>
@@ -486,6 +487,8 @@ export default function Clans({ userStreak }) {
           cursor: pointer;
           transition: all 0.2s ease;
           border: none;
+          position: relative;
+          z-index: 10;
         }
 
         .explore-join-btn.join {
@@ -500,11 +503,21 @@ export default function Clans({ userStreak }) {
           background: transparent;
           border: 1px solid rgba(255, 255, 255, 0.2);
           color: #a0a0a5;
+          min-width: 70px;
+        }
+        .explore-join-btn.joined .leave-text {
+          display: none;
         }
         .explore-join-btn.joined:hover:not(:disabled) {
           border-color: #ef4444;
           color: #ef4444;
           background: rgba(239, 68, 68, 0.05);
+        }
+        .explore-join-btn.joined:hover:not(:disabled) .joined-text {
+          display: none;
+        }
+        .explore-join-btn.joined:hover:not(:disabled) .leave-text {
+          display: inline;
         }
         .explore-join-btn.joined:disabled {
           opacity: 0.5;
