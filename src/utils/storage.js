@@ -170,7 +170,12 @@ export function initializeDatabase() {
 // Data Getters and Setters
 export function getData(key) {
   const raw = localStorage.getItem(STORAGE_KEYS[key.toUpperCase()]);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw || raw === 'undefined') return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
 }
 
 export function saveData(key, data) {

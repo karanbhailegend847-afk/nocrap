@@ -485,9 +485,11 @@ export async function checkQueueItemWaitingFS(queueDocId) {
 // Real-time listener for the total member count of a clan
 export function listenToClanMemberCountFS(clanId, callback) {
   const q = query(collection(db, 'clanMembers'), where('clanId', '==', clanId));
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.size);
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => { callback(snapshot.size); },
+    (error) => { console.warn('listenToClanMemberCountFS error:', error.code); callback(0); }
+  );
 }
 
 // Real-time listener for active users count in a clan (active in last 15 minutes)
@@ -497,18 +499,25 @@ export function listenToClanActiveCountFS(clanId, callback) {
     collection(db, 'clans', clanId, 'activeUsers'),
     where('lastActive', '>=', fifteenMinsAgo)
   );
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.size);
-  });
+  return onSnapshot(
+    q, 
+    (snapshot) => { callback(snapshot.size); },
+    (error) => { console.warn('listenToClanActiveCountFS error:', error.code); callback(0); }
+  );
 }
 
 // Fetch real member count for all clans in one batch (for initial load)
 export async function getAllClanMemberCountsFS(clanIds) {
   const counts = {};
   await Promise.all(clanIds.map(async (clanId) => {
-    const q = query(collection(db, 'clanMembers'), where('clanId', '==', clanId));
-    const snapshot = await getDocs(q);
-    counts[clanId] = snapshot.size;
+    try {
+      const q = query(collection(db, 'clanMembers'), where('clanId', '==', clanId));
+      const snapshot = await getDocs(q);
+      counts[clanId] = snapshot.size;
+    } catch (error) {
+      console.warn('getAllClanMemberCountsFS error:', error.code);
+      counts[clanId] = 0;
+    }
   }));
   return counts;
 }
