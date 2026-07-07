@@ -83,19 +83,12 @@ export default function AuthScreen({ onAuthSuccess }) {
       <div className="auth-hero">
         <div className="auth-hero-inner">
           <div className="auth-logo">
-            <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
-              <circle cx="19" cy="19" r="19" fill="#ff4500"/>
-              <path d="M28 19c0-1.1-.9-2-2-2-.5 0-1 .2-1.4.5-1.4-1-3.3-1.6-5.4-1.7l.9-4.3 3 .6c0 .8.6 1.4 1.4 1.4s1.4-.6 1.4-1.4-.6-1.4-1.4-1.4c-.6 0-1.1.4-1.3.9l-3.4-.7c-.2 0-.3.1-.4.3l-1 4.8c-2.1.1-4 .7-5.4 1.7-.4-.3-.9-.5-1.4-.5-1.1 0-2 .9-2 2 0 .8.5 1.5 1.1 1.8v.4c0 3.1 3.6 5.6 8 5.6s8-2.5 8-5.6v-.4c.6-.3 1.1-1 1.1-1.8zm-13.5 1c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4-.6 1.4-1.4 1.4-1.4-.7-1.4-1.4zm7.9 3.7c-1 1-2.5 1.4-4.4 1.4s-3.4-.5-4.4-1.4c-.2-.2-.2-.5 0-.7s.5-.2.7 0c.8.8 2.1 1.2 3.7 1.2s2.9-.4 3.7-1.2c.2-.2.5-.2.7 0s.2.5 0 .7zm-.3-2.3c-.8 0-1.4-.6-1.4-1.4s.6-1.4 1.4-1.4 1.4.6 1.4 1.4-.6 1.4-1.4 1.4z" fill="white"/>
-            </svg>
+            <img src="/clan_no_crap.jpg" alt="NoCrap" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover' }} />
             <span>NoCrap</span>
           </div>
           <h1 className="auth-hero-title">Your brain is<br/>worth rewiring.</h1>
           <p className="auth-hero-sub">Join thousands rebuilding dopamine sensitivity, one day at a time. Science-backed. Community-driven.</p>
-          <div className="auth-hero-stats">
-            <div><strong>12,400+</strong><span>active members</span></div>
-            <div><strong>89%</strong><span>90-day success rate</span></div>
-            <div><strong>4.8★</strong><span>community rating</span></div>
-          </div>
+
         </div>
       </div>
 
