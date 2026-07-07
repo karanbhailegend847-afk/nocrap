@@ -9,6 +9,7 @@ export default function Clans({ userStreak }) {
   const [joinedClans, setJoinedClans] = useState(() => getJoinedClans());
   const [clansList, setClansList] = useState(() => getClansList());
   const [activeCategory, setActiveCategory] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showMore, setShowMore] = useState(false);
   const [selectedClan, setSelectedClan] = useState(null); // null or clan object (only neural-rewirers)
   const [clanStats, setClanStats] = useState({}); // { clanId: { members: N, online: N } }
@@ -157,9 +158,16 @@ export default function Clans({ userStreak }) {
   const averageStreak = members.length > 0 ? (members.reduce((acc, m) => acc + m.streak, 0) / members.length).toFixed(1) : '0';
   const activeFlares = clanData?.flares.filter(f => !f.resolved) || [];
 
-  const filteredAll = activeCategory === 'All' 
-    ? clansList 
-    : clansList.filter(c => c.category === activeCategory);
+  const filteredAll = clansList.filter(c => {
+    const matchesCategory = activeCategory === 'All' || c.category === activeCategory;
+    if (!matchesCategory) return false;
+    
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (c.name && c.name.toLowerCase().includes(q)) || 
+           (c.id && c.id.toLowerCase().includes(q)) || 
+           (c.description && c.description.toLowerCase().includes(q));
+  });
 
   const subscribedClans = filteredAll.filter(c => joinedClans.includes(c.id));
   const recommendedClans = filteredAll.filter(c => !joinedClans.includes(c.id));
@@ -175,6 +183,27 @@ export default function Clans({ userStreak }) {
       <header className="explore-clans-header">
         <h1>Explore Communities</h1>
         <p>Find specialized pods and recovery circles aligned with your demographic identity or science discussion interests.</p>
+        <div className="explore-search-bar" style={{ marginTop: '1.5rem', position: 'relative' }}>
+          <input 
+            type="text" 
+            placeholder="Search communities by name, topic, or ID..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '12px 16px 12px 40px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              background: '#1a1820',
+              color: 'white',
+              fontSize: '0.95rem',
+              outline: 'none'
+            }}
+          />
+          <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </span>
+        </div>
       </header>
 
       {/* HORIZONTAL CATEGORY PILLS */}
@@ -214,7 +243,7 @@ export default function Clans({ userStreak }) {
                     <span className="explore-card-name">p/{clan.id}</span>
                     <span className="explore-card-stats">
                       {clanStats[clan.id]
-                        ? `${clanStats[clan.id].members} member${clanStats[clan.id].members !== 1 ? 's' : ''}`
+                        ? `${Math.max(clanStats[clan.id].members, 1)} member${Math.max(clanStats[clan.id].members, 1) !== 1 ? 's' : ''}`
                         : 'Loadingâ€¦'}
                     </span>
                   </div>
