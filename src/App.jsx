@@ -37,6 +37,7 @@ export default function App() {
 
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
 
   // Default Avatar inline SVG
   const defaultAvatarSVG = `data:image/svg+xml;utf8,<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="50" fill="%23ff4500"/><circle cx="50" cy="42" r="18" fill="%23fff"/><path d="M22 80C22 65 34.5 58 50 58C65.5 58 78 65 78 80" stroke="%23fff" stroke-width="8" stroke-linecap="round"/></svg>`;
@@ -180,6 +181,13 @@ export default function App() {
 
 
 
+  const searchResults = searchQuery.trim() ? clansList.filter(c => {
+    const q = searchQuery.toLowerCase();
+    return (c.name && c.name.toLowerCase().includes(q)) || 
+           (c.id && c.id.toLowerCase().includes(q)) || 
+           (c.description && c.description.toLowerCase().includes(q));
+  }) : [];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       
@@ -197,7 +205,7 @@ export default function App() {
         </div>
 
         {/* Search Input Bar */}
-        <div className="search-bar-container">
+        <div className="search-bar-container" style={{ position: 'relative', zIndex: 1001 }}>
           <Search size={16} className="search-bar-icon" />
           <input
             type="text"
@@ -209,7 +217,70 @@ export default function App() {
               // Dispatch query to Forum.jsx
               window.dispatchEvent(new CustomEvent('forum-search', { detail: e.target.value }));
             }}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
           />
+
+          {searchFocused && searchQuery.trim() && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 8px)',
+              left: 0,
+              right: 0,
+              background: '#1a1820',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px',
+              maxHeight: '350px',
+              overflowY: 'auto',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+              zIndex: 1100
+            }}>
+              {searchResults.length > 0 ? (
+                <>
+                  <div style={{ padding: '8px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#a0a0a5', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Communities
+                  </div>
+                  {searchResults.map(clan => (
+                    <div 
+                      key={clan.id}
+                      onClick={() => {
+                        selectPodFromSidebar(clan.id);
+                        setSearchQuery('');
+                        setSearchFocused(false);
+                        window.dispatchEvent(new CustomEvent('forum-search', { detail: '' }));
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '10px 16px',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid rgba(255,255,255,0.03)',
+                        transition: 'background 0.2s ease',
+                        textAlign: 'left'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', overflow: 'hidden', background: `${clan.color || '#ff4500'}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}>
+                        {(clan.logo || clan.logoUrl)
+                          ? <img src={clan.logo || clan.logoUrl} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: '1.1rem' }}>{clan.emoji || '👥'}</span>
+                        }
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'white' }}>p/{clan.id}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#a0a0a5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clan.description}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div style={{ padding: '20px 16px', color: '#a0a0a5', fontSize: '0.85rem', textAlign: 'center' }}>
+                  No communities found.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* User profile and actions */}
