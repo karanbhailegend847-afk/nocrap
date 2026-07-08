@@ -10,6 +10,7 @@ export default function Clans({ userStreak }) {
   const [clansList, setClansList] = useState(() => getClansList());
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [selectedClan, setSelectedClan] = useState(null); // null or clan object (only neural-rewirers)
   const [clanStats, setClanStats] = useState({}); // { clanId: { members: N, online: N } }
@@ -159,15 +160,15 @@ export default function Clans({ userStreak }) {
   const activeFlares = clanData?.flares.filter(f => !f.resolved) || [];
 
   const filteredAll = clansList.filter(c => {
-    const matchesCategory = activeCategory === 'All' || c.category === activeCategory;
-    if (!matchesCategory) return false;
-    
-    if (!searchQuery.trim()) return true;
+    return activeCategory === 'All' || c.category === activeCategory;
+  });
+
+  const searchResults = searchQuery.trim() ? clansList.filter(c => {
     const q = searchQuery.toLowerCase();
     return (c.name && c.name.toLowerCase().includes(q)) || 
            (c.id && c.id.toLowerCase().includes(q)) || 
            (c.description && c.description.toLowerCase().includes(q));
-  });
+  }) : [];
 
   const subscribedClans = filteredAll.filter(c => joinedClans.includes(c.id));
   const recommendedClans = filteredAll.filter(c => !joinedClans.includes(c.id));
@@ -183,26 +184,89 @@ export default function Clans({ userStreak }) {
       <header className="explore-clans-header">
         <h1>Explore Communities</h1>
         <p>Find specialized pods and recovery circles aligned with your demographic identity or science discussion interests.</p>
-        <div className="explore-search-bar" style={{ marginTop: '1.5rem', position: 'relative' }}>
-          <input 
-            type="text" 
-            placeholder="Search communities by name, topic, or ID..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '12px 16px 12px 40px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255,255,255,0.1)',
+        <div className="explore-search-bar" style={{ marginTop: '1.5rem', position: 'relative', zIndex: 50 }}>
+          <div style={{ position: 'relative' }}>
+            <input 
+              type="text" 
+              placeholder="Search communities by name, topic, or ID..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+              style={{
+                width: '100%',
+                padding: '12px 16px 12px 40px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: '#1a1820',
+                color: 'white',
+                fontSize: '0.95rem',
+                outline: 'none'
+              }}
+            />
+            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none', display: 'flex' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </span>
+          </div>
+
+          {searchFocused && searchQuery.trim() && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              right: 0,
               background: '#1a1820',
-              color: 'white',
-              fontSize: '0.95rem',
-              outline: 'none'
-            }}
-          />
-          <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, pointerEvents: 'none' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          </span>
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px',
+              maxHeight: '350px',
+              overflowY: 'auto',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+              zIndex: 100
+            }}>
+              {searchResults.length > 0 ? (
+                <>
+                  <div style={{ padding: '8px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#a0a0a5', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Communities
+                  </div>
+                  {searchResults.map(clan => (
+                    <div 
+                      key={clan.id}
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSearchFocused(false);
+                        handleCardClick(clan);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid rgba(255,255,255,0.03)',
+                        transition: 'background 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden', background: `${clan.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '16px', flexShrink: 0 }}>
+                        {clan.logo
+                          ? <img src={clan.logo} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: '1.2rem' }}>{clan.emoji}</span>
+                        }
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'white' }}>p/{clan.id}</span>
+                        <span style={{ fontSize: '0.8rem', color: '#a0a0a5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clan.description}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div style={{ padding: '24px 16px', color: '#a0a0a5', fontSize: '0.9rem', textAlign: 'center' }}>
+                  No communities found.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
