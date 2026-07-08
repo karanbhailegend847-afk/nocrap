@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Home, BookOpen, Users, MessageSquare, Activity, Bell, Search, PlusCircle, LogOut } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
+import { Analytics } from '@vercel/analytics/react';
 import AuthScreen from './components/AuthScreen';
 import Clans from './components/Clans';
 import Forum from './components/Forum';
@@ -536,6 +537,7 @@ export default function App() {
 
       </nav>
 
+      <Analytics />
     </div>
   );
 }
