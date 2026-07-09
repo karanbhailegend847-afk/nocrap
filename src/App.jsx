@@ -244,7 +244,8 @@ export default function App() {
                   {searchResults.map(clan => (
                     <div 
                       key={clan.id}
-                      onClick={() => {
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         selectPodFromSidebar(clan.id);
                         setSearchQuery('');
                         setSearchFocused(false);

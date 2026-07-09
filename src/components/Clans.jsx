@@ -231,7 +231,8 @@ export default function Clans({ userStreak }) {
                   {searchResults.map(clan => (
                     <div 
                       key={clan.id}
-                      onClick={() => {
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSearchQuery('');
                         setSearchFocused(false);
                         handleCardClick(clan);
