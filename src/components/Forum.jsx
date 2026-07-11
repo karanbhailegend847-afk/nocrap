@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { MessageSquare, ArrowUp, ArrowDown, AlertCircle, BookmarkCheck, Share2, Plus, Check } from 'lucide-react';
 import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
 import { auth } from '../firebase';
-import { getStreakMetrics } from '../utils/storage';
+import { getStreakMetrics, getJoinedClans, toggleJoinClan } from '../utils/storage';
 
 export default function Forum({ selectedPod, user }) {
   const [posts, setPosts] = useState([]);
@@ -50,6 +50,8 @@ export default function Forum({ selectedPod, user }) {
 
   const isJoined = currentClan && joinedClans.includes(currentClan.id);
 
+  const displayMemberCount = isJoined ? Math.max(realMemberCount, 1) : realMemberCount;
+
   useEffect(() => {
     if (!currentClan) return;
     const fetchStats = async () => {
@@ -65,7 +67,7 @@ export default function Forum({ selectedPod, user }) {
       }
     };
     fetchStats();
-  }, [selectedPod, currentClan, joinedClans]);
+  }, [selectedPod, currentClan, joinedClans, user]);
 
   useEffect(() => {
     if (!currentClan) return;
@@ -112,15 +114,17 @@ export default function Forum({ selectedPod, user }) {
     const fetchData = async () => {
       await loadPosts();
       // Load clans data
-      const uid = user?.uid || auth.currentUser?.uid;
-      const [clans, joined] = await Promise.all([
-        getClansListFS(),
-        uid ? getUserClansFS(uid) : Promise.resolve([])
-      ]);
+      const clans = await getClansListFS();
       setClansList(clans);
-      setJoinedClans(joined);
+      setJoinedClans(getJoinedClans());
     };
     fetchData();
+
+    const handleClansUpdate = () => {
+      setJoinedClans(getJoinedClans());
+    };
+    window.addEventListener('clans-updated', handleClansUpdate);
+    return () => window.removeEventListener('clans-updated', handleClansUpdate);
   }, [selectedPod, sortOrder, searchQuery, user]);
 
   // Load comments when a post is expanded
@@ -340,21 +344,23 @@ export default function Forum({ selectedPod, user }) {
 
   const handleJoinToggle = async (clanId) => {
     const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    try {
-      // Determine if currently joined
-      const isJoined = joinedClans.includes(clanId);
-      if (isJoined) {
-        await leaveClanFS(uid, clanId);
-      } else {
-        await joinClanFS(uid, clanId);
+    const isJoined = joinedClans.includes(clanId);
+    
+    // Update local storage and local state immediately!
+    const updated = toggleJoinClan(clanId);
+    setJoinedClans(updated);
+    window.dispatchEvent(new CustomEvent('clans-updated'));
+
+    if (uid) {
+      try {
+        if (isJoined) {
+          await leaveClanFS(uid, clanId);
+        } else {
+          await joinClanFS(uid, clanId);
+        }
+      } catch (err) {
+        console.error('Clan join/leave error:', err);
       }
-      // Refresh joined clans list
-      const refreshed = await getUserClansFS(uid);
-      setJoinedClans(refreshed);
-      window.dispatchEvent(new CustomEvent('clans-updated'));
-    } catch (err) {
-      console.error('Clan join/leave error:', err);
     }
   };
 
@@ -636,7 +642,7 @@ export default function Forum({ selectedPod, user }) {
                     </div>
                   </div>
                   <p className="subforum-stats-line">
-                    <span className="stat-count">{realMemberCount} {realMemberCount === 1 ? 'member' : 'members'}</span>
+                    <span className="stat-count">{displayMemberCount} {displayMemberCount === 1 ? 'member' : 'members'}</span>
                     <span className="stat-separator">•</span>
                     <span className="stat-status-dot"></span>
                     <span className="stat-online">{realOnlineCount} online</span>
@@ -780,8 +786,8 @@ export default function Forum({ selectedPod, user }) {
                   {/* Two-Column Stats Grid matching Reddit */}
                   <div className="about-stats-row">
                     <div className="about-stat-box">
-                      <span className="about-stat-num">{realMemberCount}</span>
-                      <span className="about-stat-label">{realMemberCount === 1 ? 'member' : 'members'}</span>
+                      <span className="about-stat-num">{displayMemberCount}</span>
+                      <span className="about-stat-label">{displayMemberCount === 1 ? 'member' : 'members'}</span>
                     </div>
                     <div className="about-stat-box">
                       <span className="about-stat-num" style={{ color: '#10b981' }}>{realOnlineCount}</span>

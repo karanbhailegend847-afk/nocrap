@@ -5,7 +5,7 @@ import { onClanChatListener, sendClanMsgFS, joinClanFS, leaveClanFS, getUserClan
 import { auth } from '../firebase';
 
 
-export default function Clans({ userStreak }) {
+export default function Clans({ userStreak, user }) {
   const [joinedClans, setJoinedClans] = useState(() => getJoinedClans());
   const [clansList, setClansList] = useState(() => getClansList());
   const [activeCategory, setActiveCategory] = useState('All');
@@ -21,6 +21,17 @@ export default function Clans({ userStreak }) {
   const [messageText, setMessageText] = useState('');
   const [firebaseMessages, setFirebaseMessages] = useState([]);
   const chatEndRef = useRef(null);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -184,7 +195,7 @@ export default function Clans({ userStreak }) {
       <header className="explore-clans-header">
         <h1>Explore Communities</h1>
         <p>Find specialized pods and recovery circles aligned with your demographic identity or science discussion interests.</p>
-        <div className="explore-search-bar" style={{ marginTop: '1.5rem', position: 'relative', zIndex: 50 }}>
+        <div ref={searchRef} className="explore-search-bar" style={{ marginTop: '1.5rem', position: 'relative', zIndex: 50 }}>
           <div style={{ position: 'relative' }}>
             <input 
               type="text" 
@@ -192,7 +203,6 @@ export default function Clans({ userStreak }) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
-              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
               style={{
                 width: '100%',
                 padding: '12px 16px 12px 40px',
@@ -231,8 +241,7 @@ export default function Clans({ userStreak }) {
                   {searchResults.map(clan => (
                     <div 
                       key={clan.id}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
+                      onClick={() => {
                         setSearchQuery('');
                         setSearchFocused(false);
                         handleCardClick(clan);

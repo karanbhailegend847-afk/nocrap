@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Home, BookOpen, Users, MessageSquare, Activity, Bell, Search, PlusCircle, LogOut } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
@@ -11,7 +11,7 @@ import Journal from './components/Journal';
 import Notifications from './components/Notifications';
 import Profile from './components/Profile';
 import CreateClanModal from './components/CreateClanModal';
-import { initializeDatabase, getData, getStreakMetrics, logSlip, seedUserFromFirebase } from './utils/storage';
+import { initializeDatabase, getData, getStreakMetrics, logSlip, seedUserFromFirebase, getJoinedClans, toggleJoinClan, getClansList } from './utils/storage';
 import { getClansListFS, getUserClansFS } from './utils/firestore';
 
 export default function App() {
@@ -39,6 +39,17 @@ export default function App() {
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Default Avatar inline SVG
   const defaultAvatarSVG = `data:image/svg+xml;utf8,<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="50" fill="%23ff4500"/><circle cx="50" cy="42" r="18" fill="%23fff"/><path d="M22 80C22 65 34.5 58 50 58C65.5 58 78 65 78 80" stroke="%23fff" stroke-width="8" stroke-linecap="round"/></svg>`;
@@ -71,14 +82,28 @@ export default function App() {
           const list = await getClansListFS();
           const joined = await getUserClansFS(firebaseUser.uid);
           setClansList(list);
-          setJoinedClans(joined);
+          
+          const local = getJoinedClans();
+          if (!local || local.length <= 1) {
+            setJoinedClans(joined);
+            // Save to local storage
+            joined.forEach(id => {
+              const currentLocal = getJoinedClans();
+              if (!currentLocal.includes(id)) {
+                toggleJoinClan(id);
+              }
+            });
+          } else {
+            setJoinedClans(local);
+          }
         } catch (err) {
-          console.warn('Error fetching clans from Firestore:', err);
+          console.warn('Error fetching clans from Firestore on auth change:', err);
+          setJoinedClans(getJoinedClans());
         }
       } else {
         setUser(null);
-        setJoinedClans([]);
-        setClansList([]);
+        setJoinedClans(getJoinedClans());
+        setClansList(getClansList());
       }
       setAuthReady(true);
     });
@@ -99,16 +124,8 @@ export default function App() {
       loadAppStates();
     };
     const handleClansUpdate = () => {
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        Promise.all([
-          getClansListFS(),
-          getUserClansFS(uid)
-        ]).then(([list, joined]) => {
-          setClansList(list);
-          setJoinedClans(joined);
-        }).catch(console.warn);
-      }
+      setJoinedClans(getJoinedClans());
+      setClansList(getClansList());
     };
     const handleOpenCreateClan = () => {
       setIsCreateClanOpen(true);
@@ -206,7 +223,7 @@ export default function App() {
         </div>
 
         {/* Search Input Bar */}
-        <div className="search-bar-container" style={{ position: 'relative', zIndex: 1001 }}>
+        <div ref={searchRef} className="search-bar-container" style={{ position: 'relative', zIndex: 1001 }}>
           <Search size={16} className="search-bar-icon" />
           <input
             type="text"
@@ -219,7 +236,6 @@ export default function App() {
               window.dispatchEvent(new CustomEvent('forum-search', { detail: e.target.value }));
             }}
             onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
           />
 
           {searchFocused && searchQuery.trim() && (
@@ -244,8 +260,7 @@ export default function App() {
                   {searchResults.map(clan => (
                     <div 
                       key={clan.id}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
+                      onClick={() => {
                         selectPodFromSidebar(clan.id);
                         setSearchQuery('');
                         setSearchFocused(false);
