@@ -12,7 +12,9 @@ import {
   closeChatSessionFS,
   listenToChatSessionFS,
   listenToActiveMatchersCountFS,
-  checkQueueItemWaitingFS
+  checkQueueItemWaitingFS,
+  listenToWaitingQueueFS,
+  matchWithCandidateDirectFS
 } from '../utils/firestore';
 
 export default function Chatbox() {
@@ -23,6 +25,7 @@ export default function Chatbox() {
   const [sessionId, setSessionId] = useState(null);
   const [activeMatchersCount, setActiveMatchersCount] = useState(0);
   const [waitSeconds, setWaitSeconds] = useState(0);
+  const [waitingQueue, setWaitingQueue] = useState([]);
 
   const messagesEndRef = useRef(null);
   const queueUnsubscribeRef = useRef(null);
@@ -38,11 +41,15 @@ export default function Chatbox() {
   }, [messages]);
 
   useEffect(() => {
-    const unsubscribe = listenToActiveMatchersCountFS((count) => {
+    const unsubscribeActive = listenToActiveMatchersCountFS((count) => {
       setActiveMatchersCount(count);
     });
+    const unsubscribeQueue = listenToWaitingQueueFS((queue) => {
+      setWaitingQueue(queue);
+    });
     return () => {
-      unsubscribe();
+      unsubscribeActive();
+      unsubscribeQueue();
       cleanupChat();
     };
   }, []);
@@ -115,6 +122,30 @@ export default function Chatbox() {
     }
   };
 
+  const connectToPeer = async (peer) => {
+    const uid = auth.currentUser?.uid;
+    const username = auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'Peer';
+    if (!uid) return;
+
+    setMatchState('matching');
+    setPartner(null);
+    setMessages([]);
+    setSessionId(null);
+    matchingRef.current = false;
+
+    try {
+      const session = await matchWithCandidateDirectFS(uid, username, peer.id, peer.uid, peer.username);
+      if (session) {
+        matchingRef.current = true;
+        startChat(session);
+      }
+    } catch (err) {
+      console.error('Failed to match directly:', err);
+      alert(err.message || 'Failed to connect. The peer might have already matched or disconnected.');
+      setMatchState('idle');
+    }
+  };
+
   const startChat = (sId) => {
     const uid = auth.currentUser?.uid;
     setSessionId(sId);
@@ -177,6 +208,8 @@ export default function Chatbox() {
 
   const formatWait = (s) => s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
 
+  const visiblePeers = waitingQueue.filter(p => p.uid !== auth.currentUser?.uid);
+
   return (
     <div className="chitchat-container">
       <main className="chitchat-main">
@@ -205,16 +238,63 @@ export default function Chatbox() {
           <div className="chitchat-bg-shape shape2"></div>
 
           {matchState === 'idle' && (
-            <div className="chitchat-centered-state">
-              <div className="chitchat-start-circle">
-                <Sparkles size={40} color="#a393eb" />
+            <div className="chitchat-idle-view">
+              <div className="chitchat-centered-state" style={{ margin: '0 auto' }}>
+                <div className="chitchat-start-circle">
+                  <Sparkles size={40} color="#a393eb" />
+                </div>
+                <h2>Ready to connect?</h2>
+                <p>
+                  Skip isolation. Connect anonymously with peers in recovery.
+                  {activeMatchersCount > 0 && <><br/><strong style={{color:'#ff6b35'}}>{activeMatchersCount} searching now</strong></>}
+                </p>
+                <button className="chitchat-start-btn" onClick={startSearch}>Find a Match</button>
               </div>
-              <h2>Ready to connect?</h2>
-              <p>
-                Skip isolation. Connect anonymously with peers in recovery.
-                {activeMatchersCount > 0 && <><br/><strong style={{color:'#ff6b35'}}>{activeMatchersCount} searching now</strong></>}
-              </p>
-              <button className="chitchat-start-btn" onClick={startSearch}>Find a Match</button>
+
+              <div className="chitchat-directory">
+                <h3 className="chitchat-directory-title">
+                  <span>Waiting Peers Directory</span>
+                  <span className="chitchat-pulse-badge">
+                    <span className="pulse-dot"></span>
+                    {visiblePeers.length} waiting
+                  </span>
+                </h3>
+                
+                <div className="chitchat-directory-list">
+                  {visiblePeers.length === 0 ? (
+                    <div className="chitchat-directory-empty">
+                      No one is waiting right now. Click "Find a Match" to start waiting so others can join you!
+                    </div>
+                  ) : (
+                    visiblePeers.map((peer, idx) => {
+                      const joinedTime = peer.joinedAt?.toMillis 
+                        ? peer.joinedAt.toMillis() 
+                        : (peer.joinedAt ? new Date(peer.joinedAt).getTime() : Date.now());
+                      const waitTimeMin = Math.max(0, Math.floor((Date.now() - joinedTime) / 60000));
+                      
+                      return (
+                        <div key={peer.id} className="chitchat-peer-row">
+                          <div className="chitchat-peer-info">
+                            <span className="chitchat-peer-avatar">👤</span>
+                            <div className="chitchat-peer-details">
+                              <span className="chitchat-peer-name">u/{peer.username || `peer_${idx + 1}`}</span>
+                              <span className="chitchat-peer-wait">
+                                waiting {waitTimeMin === 0 ? 'just now' : waitTimeMin + 'm ago'}
+                              </span>
+                            </div>
+                          </div>
+                          <button 
+                            className="chitchat-connect-btn" 
+                            onClick={() => connectToPeer(peer)}
+                          >
+                            Chat Now
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -304,6 +384,29 @@ export default function Chatbox() {
         .chitchat-bg-shape { position:absolute; background:#221e2a; border-radius:32px; z-index:0; pointer-events:none; }
         .chitchat-bg-shape.shape1 { width:140px; height:140px; right:-30px; top:40%; transform:rotate(45deg); opacity:0.3; }
         .chitchat-bg-shape.shape2 { width:80px; height:80px; left:40%; bottom:15%; transform:rotate(15deg); opacity:0.2; }
+        
+        .chitchat-idle-view { display:flex; flex-direction:column; align-items:center; gap:24px; margin:auto; width:100%; max-width:480px; z-index:1; }
+        .chitchat-directory { width:100%; background:#15131a; border:1px solid rgba(255,255,255,0.04); border-radius:12px; padding:16px; box-sizing:border-box; }
+        .chitchat-directory-title { display:flex; justify-content:space-between; align-items:center; font-size:0.9rem; font-weight:600; color:white; margin:0 0 14px 0; }
+        .chitchat-pulse-badge { display:flex; align-items:center; gap:6px; background:rgba(255,107,53,0.1); color:#ff6b35; font-size:0.72rem; padding:2px 8px; border-radius:12px; font-weight:700; }
+        .pulse-dot { width:6px; height:6px; background-color:#ff6b35; border-radius:50%; animation:pulse-anim 1.5s infinite; }
+        @keyframes pulse-anim {
+          0% { transform:scale(0.95); box-shadow:0 0 0 0 rgba(255,107,53,0.7); }
+          70% { transform:scale(1); box-shadow:0 0 0 4px rgba(255,107,53,0); }
+          100% { transform:scale(0.95); box-shadow:0 0 0 0 rgba(255,107,53,0); }
+        }
+        .chitchat-directory-list { display:flex; flex-direction:column; gap:8px; max-height:200px; overflow-y:auto; padding-right:4px; }
+        .chitchat-directory-empty { text-align:center; color:#65636c; font-size:0.8rem; padding:20px 0; line-height:1.5; }
+        .chitchat-peer-row { display:flex; justify-content:space-between; align-items:center; background:#211e26; border:1px solid rgba(255,255,255,0.02); padding:10px 12px; border-radius:8px; transition:background 0.2s; }
+        .chitchat-peer-row:hover { background:#282430; }
+        .chitchat-peer-info { display:flex; align-items:center; gap:10px; }
+        .chitchat-peer-avatar { font-size:1.1rem; opacity:0.8; }
+        .chitchat-peer-details { display:flex; flex-direction:column; gap:2px; }
+        .chitchat-peer-name { font-size:0.82rem; font-weight:600; color:#e0e0e2; }
+        .chitchat-peer-wait { font-size:0.7rem; color:#65636c; }
+        .chitchat-connect-btn { background:#00b4d8; color:white; border:none; padding:6px 12px; font-size:0.75rem; font-weight:700; border-radius:6px; cursor:pointer; transition:background 0.2s; }
+        .chitchat-connect-btn:hover { background:#0096c7; }
+
         .chitchat-centered-state { margin:auto; text-align:center; z-index:1; max-width:340px; padding:20px; }
         .chitchat-start-circle { width:72px; height:72px; border-radius:50%; background:rgba(255,69,0,0.1); border:1px solid rgba(255,69,0,0.2); display:flex; align-items:center; justify-content:center; margin:0 auto 20px auto; }
         .chitchat-centered-state h2 { color:white; font-size:1.3rem; margin-bottom:8px; }

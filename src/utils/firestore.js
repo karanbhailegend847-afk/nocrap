@@ -15,7 +15,8 @@ import {
   addDoc,
   deleteDoc,
   writeBatch,
-  serverTimestamp
+  serverTimestamp,
+  runTransaction
 } from 'firebase/firestore';
 
 // Firestore Service Module
@@ -491,6 +492,58 @@ export function listenToActiveMatchersCountFS(callback) {
   return onSnapshot(q, (snapshot) => {
     callback(snapshot.size);
   });
+}
+
+export function listenToWaitingQueueFS(callback) {
+  const q = query(
+    collection(db, 'matchmakingQueue'),
+    where('status', '==', 'waiting')
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const users = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      callback(users);
+    },
+    (error) => {
+      console.warn('listenToWaitingQueueFS error:', error);
+      callback([]);
+    }
+  );
+}
+
+export async function matchWithCandidateDirectFS(myUid, myUsername, candidateQueueId, candidateUid, candidateUsername) {
+  const candidateRef = doc(db, 'matchmakingQueue', candidateQueueId);
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const sessionRef = doc(db, 'chatSessions', sessionId);
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const candidateSnap = await transaction.get(candidateRef);
+      if (!candidateSnap.exists() || candidateSnap.data().status !== 'waiting') {
+        throw new Error('Peer is no longer waiting.');
+      }
+
+      transaction.set(sessionRef, {
+        users: [myUid, candidateUid],
+        usernames: { [myUid]: myUsername, [candidateUid]: candidateUsername },
+        createdAt: new Date().toISOString(),
+        active: true
+      });
+
+      transaction.update(candidateRef, {
+        status: 'matched',
+        matchedSessionId: sessionId
+      });
+    });
+    return sessionId;
+  } catch (err) {
+    console.error('Direct match transaction failed:', err);
+    throw err;
+  }
 }
 
 export async function checkQueueItemWaitingFS(queueDocId) {
