@@ -14,7 +14,8 @@ import {
   onSnapshot,
   addDoc,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  serverTimestamp
 } from 'firebase/firestore';
 
 // Firestore Service Module
@@ -376,10 +377,17 @@ export async function getClanActiveUsersCountFS(clanId) {
 }
 
 export async function enterMatchmakingQueueFS(uid, username) {
+  // First, clean up any stale queue entries for this user
+  const staleQ = query(collection(db, 'matchmakingQueue'), where('uid', '==', uid));
+  const staleSnap = await getDocs(staleQ);
+  const cleanupBatch = writeBatch(db);
+  staleSnap.docs.forEach(d => cleanupBatch.delete(d.ref));
+  await cleanupBatch.commit();
+
   const docRef = await addDoc(collection(db, 'matchmakingQueue'), {
     uid,
     username,
-    joinedAt: new Date().toISOString(),
+    joinedAt: serverTimestamp(),
     status: 'waiting',
     matchedSessionId: null
   });
@@ -389,7 +397,7 @@ export async function enterMatchmakingQueueFS(uid, username) {
 export async function exitMatchmakingQueueFS(queueDocId) {
   if (!queueDocId) return;
   const queueRef = doc(db, 'matchmakingQueue', queueDocId);
-  await deleteDoc(queueRef);
+  await deleteDoc(queueRef).catch(() => {});
 }
 
 export function listenToMatchmakingQueueFS(queueDocId, callback) {
@@ -398,44 +406,54 @@ export function listenToMatchmakingQueueFS(queueDocId, callback) {
 }
 
 export async function findMatchmakingCandidateFS(myQueueDocId, myUid, myUsername) {
-  // Query all waiting queue items and filter/sort in memory to bypass composite index constraints
+  // Read the entire queue and find oldest waiting peer that isn't us
   const snapshot = await getDocs(collection(db, 'matchmakingQueue'));
   const waitingCandidates = snapshot.docs
-    .map(doc => ({ id: doc.id, ...doc.data() }))
-    .filter(doc => doc.status === 'waiting' && doc.id !== myQueueDocId)
-    .sort((a, b) => new Date(a.joinedAt) - new Date(b.joinedAt));
-
-  const candidate = waitingCandidates[0];
-  if (candidate) {
-    const candidateQueueId = candidate.id;
-    const candidateUid = candidate.uid;
-    const candidateUsername = candidate.username;
-
-    const sessionId = `session_${myUid}_${candidateUid}_${Date.now()}`;
-    const sessionRef = doc(db, 'chatSessions', sessionId);
-    const batch = writeBatch(db);
-
-    batch.set(sessionRef, {
-      users: [myUid, candidateUid],
-      usernames: { [myUid]: myUsername, [candidateUid]: candidateUsername },
-      createdAt: new Date().toISOString(),
-      active: true
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(d => d.status === 'waiting' && d.id !== myQueueDocId && d.uid !== myUid)
+    .sort((a, b) => {
+      // Sort by joinedAt — serverTimestamp becomes a Timestamp object
+      const ta = a.joinedAt?.toMillis ? a.joinedAt.toMillis() : new Date(a.joinedAt).getTime();
+      const tb = b.joinedAt?.toMillis ? b.joinedAt.toMillis() : new Date(b.joinedAt).getTime();
+      return ta - tb;
     });
 
-    batch.set(doc(db, 'matchmakingQueue', candidateQueueId), {
-      status: 'matched',
-      matchedSessionId: sessionId
-    }, { merge: true });
+  const candidate = waitingCandidates[0];
+  if (!candidate) return null;
 
-    batch.set(doc(db, 'matchmakingQueue', myQueueDocId), {
-      status: 'matched',
-      matchedSessionId: sessionId
-    }, { merge: true });
+  const candidateQueueId = candidate.id;
+  const candidateUid = candidate.uid;
+  const candidateUsername = candidate.username;
 
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const sessionRef = doc(db, 'chatSessions', sessionId);
+  const batch = writeBatch(db);
+
+  batch.set(sessionRef, {
+    users: [myUid, candidateUid],
+    usernames: { [myUid]: myUsername, [candidateUid]: candidateUsername },
+    createdAt: new Date().toISOString(),
+    active: true
+  });
+
+  batch.update(doc(db, 'matchmakingQueue', candidateQueueId), {
+    status: 'matched',
+    matchedSessionId: sessionId
+  });
+
+  batch.update(doc(db, 'matchmakingQueue', myQueueDocId), {
+    status: 'matched',
+    matchedSessionId: sessionId
+  });
+
+  try {
     await batch.commit();
     return sessionId;
+  } catch (err) {
+    // Another user matched us first — our doc may already be matched
+    console.warn('Batch match failed (likely already matched):', err.message);
+    return null;
   }
-  return null;
 }
 
 export async function sendChatMessageFS(sessionId, text, uid, username) {
