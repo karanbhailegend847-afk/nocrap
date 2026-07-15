@@ -258,8 +258,8 @@ export default function Clans({ userStreak, user }) {
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
                       <div style={{ width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden', background: `${clan.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '16px', flexShrink: 0 }}>
-                        {clan.logo
-                          ? <img src={clan.logo} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        {(clan.logo || clan.logoUrl)
+                          ? <img src={clan.logo || clan.logoUrl} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : <span style={{ fontSize: '1.2rem' }}>{clan.emoji}</span>
                         }
                       </div>
@@ -308,8 +308,8 @@ export default function Clans({ userStreak, user }) {
               >
                 <div className="explore-card-top">
                   <div className="explore-card-avatar" style={{ background: `${clan.color}20`, border: `1px solid ${clan.color}50`, overflow: 'hidden' }}>
-                    {clan.logo
-                      ? <img src={clan.logo} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                    {(clan.logo || clan.logoUrl)
+                      ? <img src={clan.logo || clan.logoUrl} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       : <span style={{ color: clan.color }} className="explore-card-emoji">{clan.emoji}</span>
                     }
                   </div>
@@ -360,8 +360,8 @@ export default function Clans({ userStreak, user }) {
                 >
                   <div className="explore-card-top">
                     <div className="explore-card-avatar" style={{ background: `${clan.color}20`, border: `1px solid ${clan.color}40` }}>
-                      {clan.logo
-                      ? <img src={clan.logo} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                      {(clan.logo || clan.logoUrl)
+                      ? <img src={clan.logo || clan.logoUrl} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       : <span style={{ color: clan.color }} className="explore-card-emoji">{clan.emoji}</span>
                     }
                     </div>
