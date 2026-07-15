@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -19,8 +19,13 @@ function GoogleIcon() {
   );
 }
 
-export default function AuthScreen({ onAuthSuccess }) {
-  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+export default function AuthScreen({ onAuthSuccess, initialMode = 'signin' }) {
+  const [mode, setMode] = useState(initialMode); // 'signin' | 'signup'
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -179,10 +184,11 @@ export default function AuthScreen({ onAuthSuccess }) {
       <style>{`
         .auth-overlay {
           display: flex;
-          min-height: 100vh;
+          min-height: 520px;
           background: #070a12;
           font-family: var(--font-sans);
           animation: authFadeIn 0.4s ease;
+          width: 100%;
         }
         @keyframes authFadeIn {
           from { opacity: 0; transform: translateY(8px); }

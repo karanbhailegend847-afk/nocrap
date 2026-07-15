@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Home, BookOpen, Users, MessageSquare, Activity, Bell, Search, PlusCircle, LogOut } from 'lucide-react';
+import { Home, BookOpen, Users, MessageSquare, Activity, Bell, Search, PlusCircle, LogOut, X } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { Analytics } from '@vercel/analytics/react';
@@ -21,6 +21,8 @@ export default function App() {
   const [activePod, setActivePod] = useState('all'); // Filter for forum
   const [isSlipOpen, setIsSlipOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('signup'); // 'signin' | 'signup'
   
   // States to sync metrics globally
   const [userStreak, setUserStreak] = useState(() => getStreakMetrics().current);
@@ -77,6 +79,7 @@ export default function App() {
         setUser(localUser);
         const metrics = getStreakMetrics();
         setUserStreak(metrics.current);
+        setShowAuthModal(false);
 
         try {
           const list = await getClansListFS();
@@ -104,6 +107,7 @@ export default function App() {
         setUser(null);
         setJoinedClans(getJoinedClans());
         setClansList(getClansList());
+        setShowAuthModal(true);
       }
       setAuthReady(true);
     });
@@ -130,12 +134,17 @@ export default function App() {
     const handleOpenCreateClan = () => {
       setIsCreateClanOpen(true);
     };
+    const handleTriggerAuth = (e) => {
+      setAuthModalMode(e.detail || 'signup');
+      setShowAuthModal(true);
+    };
 
     window.addEventListener('switch-tab', handleSwitchTab);
     window.addEventListener('xp-updated', handleXPUpdate);
     window.addEventListener('focus', loadAppStates);
     window.addEventListener('clans-updated', handleClansUpdate);
     window.addEventListener('open-create-clan', handleOpenCreateClan);
+    window.addEventListener('trigger-auth', handleTriggerAuth);
 
     return () => {
       unsubscribeAuth();
@@ -144,6 +153,7 @@ export default function App() {
       window.removeEventListener('focus', loadAppStates);
       window.removeEventListener('clans-updated', handleClansUpdate);
       window.removeEventListener('open-create-clan', handleOpenCreateClan);
+      window.removeEventListener('trigger-auth', handleTriggerAuth);
     };
   }, []);
 
@@ -151,6 +161,7 @@ export default function App() {
     const localUser = seedUserFromFirebase(firebaseUser);
     setUser(localUser);
     loadAppStates();
+    setShowAuthModal(false);
   };
 
   const handleSignOut = async () => {
@@ -158,6 +169,10 @@ export default function App() {
     setUser(null);
   };
 
+  const openAuthModal = (mode = 'signup') => {
+    setAuthModalMode(mode);
+    setShowAuthModal(true);
+  };
 
   const handleSlipSubmit = (e) => {
     e.preventDefault();
@@ -175,6 +190,10 @@ export default function App() {
 
   // Header quick thread trigger
   const triggerCreateThread = () => {
+    if (!user) {
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
+      return;
+    }
     setActiveTab('forum');
     // Dispatch event to open Create Thread modal inside Forum.jsx
     setTimeout(() => {
@@ -190,10 +209,6 @@ export default function App() {
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
-  }
-
-  if (!user) {
-    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
   }
 
 
@@ -306,34 +321,55 @@ export default function App() {
             <PlusCircle size={14} /> Create
           </button>
           
-          <button 
-            style={{ background: 'none', border: 'none', color: activeTab === 'notifications' ? 'var(--color-accent)' : 'var(--text-secondary)', cursor: 'pointer', padding: '4px', position: 'relative' }}
-            onClick={() => setActiveTab('notifications')}
-            title="Notifications"
-          >
-            <Bell size={20} />
-          </button>
+          {user ? (
+            <>
+              <button 
+                style={{ background: 'none', border: 'none', color: activeTab === 'notifications' ? 'var(--color-accent)' : 'var(--text-secondary)', cursor: 'pointer', padding: '4px', position: 'relative' }}
+                onClick={() => setActiveTab('notifications')}
+                title="Notifications"
+              >
+                <Bell size={20} />
+              </button>
 
-          {/* Profile Avatar */}
-          <div className="avatar-circle" title={user.username} onClick={() => setIsProfileOpen(true)}>
-            <img
-              src={user.photoURL || '/default_avatar.png'}
-              alt="Avatar"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = defaultAvatarSVG;
-              }}
-            />
-          </div>
+              {/* Profile Avatar */}
+              <div className="avatar-circle" title={user.username || 'Profile'} onClick={() => setIsProfileOpen(true)}>
+                <img
+                  src={user.photoURL || '/default_avatar.png'}
+                  alt="Avatar"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = defaultAvatarSVG;
+                  }}
+                />
+              </div>
 
-          {/* Sign Out */}
-          <button
-            title="Sign out"
-            onClick={handleSignOut}
-            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-          >
-            <LogOut size={18} />
-          </button>
+              {/* Sign Out */}
+              <button
+                title="Sign out"
+                onClick={handleSignOut}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+              >
+                <LogOut size={18} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button 
+                className="btn btn-secondary" 
+                style={{ padding: '6px 16px', fontSize: '0.8rem', borderRadius: '20px', background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#a0a0a5' }} 
+                onClick={() => openAuthModal('signin')}
+              >
+                Log In
+              </button>
+              <button 
+                className="btn btn-primary" 
+                style={{ padding: '6px 16px', fontSize: '0.8rem', borderRadius: '20px', background: '#ff4500', border: 'none', color: 'white' }} 
+                onClick={() => openAuthModal('signup')}
+              >
+                Sign Up
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -359,21 +395,39 @@ export default function App() {
 
             <button 
               className="sidebar-link"
-              onClick={() => setIsCreateClanOpen(true)}
+              onClick={() => {
+                if (!user) {
+                  window.dispatchEvent(new CustomEvent('trigger-auth'));
+                } else {
+                  setIsCreateClanOpen(true);
+                }
+              }}
             >
               <PlusCircle size={18} style={{ color: 'var(--color-accent-light)' }} /> Start a Clan
             </button>
 
             <button 
               className={`sidebar-link ${activeTab === 'chat' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chat')}
+              onClick={() => {
+                if (!user) {
+                  window.dispatchEvent(new CustomEvent('trigger-auth'));
+                } else {
+                  setActiveTab('chat');
+                }
+              }}
             >
               <MessageSquare size={18} /> Chatbox
             </button>
 
             <button 
               className={`sidebar-link ${activeTab === 'journal' ? 'active' : ''}`}
-              onClick={() => setActiveTab('journal')}
+              onClick={() => {
+                if (!user) {
+                  window.dispatchEvent(new CustomEvent('trigger-auth'));
+                } else {
+                  setActiveTab('journal');
+                }
+              }}
             >
               <BookOpen size={18} /> Journal & Letters
             </button>
@@ -528,7 +582,13 @@ export default function App() {
         </button>
 
         <button 
-          onClick={() => setActiveTab('clan')} 
+          onClick={() => {
+            if (!user) {
+              window.dispatchEvent(new CustomEvent('trigger-auth'));
+            } else {
+              setActiveTab('clan');
+            }
+          }} 
           className={`nav-item ${activeTab === 'clan' ? 'active' : ''}`}
         >
           <Users size={18} />
@@ -536,7 +596,13 @@ export default function App() {
         </button>
 
         <button 
-          onClick={() => setActiveTab('chat')} 
+          onClick={() => {
+            if (!user) {
+              window.dispatchEvent(new CustomEvent('trigger-auth'));
+            } else {
+              setActiveTab('chat');
+            }
+          }} 
           className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`}
         >
           <MessageSquare size={18} />
@@ -544,14 +610,69 @@ export default function App() {
         </button>
 
         <button 
-          onClick={() => setActiveTab('journal')} 
+          onClick={() => {
+            if (!user) {
+              window.dispatchEvent(new CustomEvent('trigger-auth'));
+            } else {
+              setActiveTab('journal');
+            }
+          }} 
           className={`nav-item ${activeTab === 'journal' ? 'active' : ''}`}
         >
           <BookOpen size={18} />
           <span>Journal</span>
         </button>
-
       </nav>
+
+      {/* AUTH POPUP MODAL */}
+      {showAuthModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(7, 10, 18, 0.85)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: '850px', background: '#070a12', borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+            
+            {/* Close Button */}
+            <button 
+              onClick={() => setShowAuthModal(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'rgba(255,255,255,0.06)',
+                border: 'none',
+                color: 'white',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 10,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+            >
+              <X size={18} />
+            </button>
+
+            <AuthScreen 
+              onAuthSuccess={handleAuthSuccess} 
+              initialMode={authModalMode}
+            />
+          </div>
+        </div>
+      )}
 
       <Analytics />
     </div>

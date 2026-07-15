@@ -150,7 +150,7 @@ export default function Forum({ selectedPod, user }) {
       setSearchQuery(e.detail || '');
     };
     const handleOpenCreate = () => {
-      setShowCreateModal(true);
+      triggerCreatePost();
     };
     const handleUpdate = () => {
       // Re-fetch from Firestore to stay in sync
@@ -230,6 +230,15 @@ export default function Forum({ selectedPod, user }) {
     }
   };
 
+  const triggerCreatePost = () => {
+    const uid = user?.uid || auth.currentUser?.uid;
+    if (!uid) {
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
+    } else {
+      setShowCreateModal(true);
+    }
+  };
+
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (!postTitle.trim() || !postContent.trim()) {
@@ -242,7 +251,7 @@ export default function Forum({ selectedPod, user }) {
     const username = user?.displayName || auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'Anonymous';
 
     if (!uid) {
-      setPostError('You must be signed in to create a post.');
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
       return;
     }
 
@@ -277,7 +286,7 @@ export default function Forum({ selectedPod, user }) {
     const uid = user?.uid || auth.currentUser?.uid;
     const username = user?.displayName || auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'Anonymous';
     if (!uid) {
-      setCommentError('You must be signed in to comment.');
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
       return;
     }
     try {
@@ -303,6 +312,7 @@ export default function Forum({ selectedPod, user }) {
     const prevVote = votedPosts[postId];
     const uid = user?.uid || auth.currentUser?.uid;
     if (!uid) {
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
       return;
     }
     try {
@@ -344,6 +354,10 @@ export default function Forum({ selectedPod, user }) {
 
   const handleJoinToggle = async (clanId) => {
     const uid = auth.currentUser?.uid;
+    if (!uid) {
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
+      return;
+    }
     const isJoined = joinedClans.includes(clanId);
     
     // Update local storage and local state immediately!
@@ -351,16 +365,14 @@ export default function Forum({ selectedPod, user }) {
     setJoinedClans(updated);
     window.dispatchEvent(new CustomEvent('clans-updated'));
 
-    if (uid) {
-      try {
-        if (isJoined) {
-          await leaveClanFS(uid, clanId);
-        } else {
-          await joinClanFS(uid, clanId);
-        }
-      } catch (err) {
-        console.error('Clan join/leave error:', err);
+    try {
+      if (isJoined) {
+        await leaveClanFS(uid, clanId);
+      } else {
+        await joinClanFS(uid, clanId);
       }
+    } catch (err) {
+      console.error('Clan join/leave error:', err);
     }
   };
 
@@ -598,7 +610,7 @@ export default function Forum({ selectedPod, user }) {
                         className="reddit-capsule-btn secondary"
                         onClick={() => {
                           setTargetPod(currentClan.id);
-                          setShowCreateModal(true);
+                          triggerCreatePost();
                         }}
                       >
                         <Plus size={14} /> Create Post
@@ -847,20 +859,20 @@ export default function Forum({ selectedPod, user }) {
                   </div>
                   <button
                     className="create-post-input-fake"
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={triggerCreatePost}
                   >
                     Create Post
                   </button>
                   <button
                     className="create-post-icon-btn"
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={triggerCreatePost}
                     title="Add Image"
                   >
                     🖼
                   </button>
                   <button
                     className="create-post-icon-btn"
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={triggerCreatePost}
                     title="Add Link"
                   >
                     🔗
@@ -1024,7 +1036,7 @@ export default function Forum({ selectedPod, user }) {
                   <button 
                     className="reddit-capsule-btn primary" 
                     style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={triggerCreatePost}
                   >
                     Create Post
                   </button>

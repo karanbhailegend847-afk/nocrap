@@ -135,20 +135,22 @@ export default function Clans({ userStreak, user }) {
   const handleJoinToggle = async (clanId, e) => {
     e.stopPropagation(); // Prevent card click trigger
     const uid = auth.currentUser?.uid;
+    if (!uid) {
+      window.dispatchEvent(new CustomEvent('trigger-auth'));
+      return;
+    }
     const isJoined = joinedClans.includes(clanId);
     // Update local state immediately
     const updated = toggleJoinClan(clanId);
     setJoinedClans(updated);
     // Persist to Firestore
-    if (uid) {
-      try {
-        if (isJoined) {
-          await leaveClanFS(uid, clanId);
-        } else {
-          await joinClanFS(uid, clanId);
-        }
-      } catch (err) { console.warn('Firestore join/leave error:', err); }
-    }
+    try {
+      if (isJoined) {
+        await leaveClanFS(uid, clanId);
+      } else {
+        await joinClanFS(uid, clanId);
+      }
+    } catch (err) { console.warn('Firestore join/leave error:', err); }
     // Dispatch global event to sync left sidebar instantly
     window.dispatchEvent(new CustomEvent('clans-updated'));
   };
