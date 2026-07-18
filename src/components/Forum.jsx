@@ -38,6 +38,7 @@ export default function Forum({ selectedPod, user }) {
   const [editClanRulesText, setEditClanRulesText] = useState('');
   const [editClanLogoUrl, setEditClanLogoUrl] = useState('');
   const [editClanBannerUrl, setEditClanBannerUrl] = useState('');
+  const [editClanBgVideoUrl, setEditClanBgVideoUrl] = useState('');
   const [editClanError, setEditClanError] = useState('');
 
   // Real-time dynamic clan statistics
@@ -230,6 +231,42 @@ export default function Forum({ selectedPod, user }) {
     }
   };
 
+  const handleBgVideoChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    // Validate file type
+    if (!file.type.startsWith('video/')) {
+      setEditClanError('Please select a valid video file.');
+      return;
+    }
+    // Validate file size (max 10MB for a 5s clip)
+    if (file.size > 1024 * 1024 * 10) {
+      setEditClanError('Background video must be less than 10MB.');
+      return;
+    }
+    // Validate video duration <= 5 seconds
+    const videoEl = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    videoEl.src = url;
+    videoEl.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      if (videoEl.duration > 5) {
+        setEditClanError('Video must be 5 seconds or shorter. This one is ' + Math.round(videoEl.duration) + 's.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditClanBgVideoUrl(reader.result);
+        setEditClanError('');
+      };
+      reader.readAsDataURL(file);
+    };
+    videoEl.onerror = () => {
+      URL.revokeObjectURL(url);
+      setEditClanError('Could not read the video file.');
+    };
+  };
+
   const triggerCreatePost = () => {
     const uid = user?.uid || auth.currentUser?.uid;
     if (!uid) {
@@ -388,7 +425,9 @@ export default function Forum({ selectedPod, user }) {
         color: editClanColor,
         emoji: editClanEmoji,
         logoUrl: editClanLogoUrl,
+        logo: editClanLogoUrl,
         bannerUrl: editClanBannerUrl,
+        bgVideoUrl: editClanBgVideoUrl,
         rules: editClanRulesText.split('\n').map(r => r.trim()).filter(Boolean)
       });
       setShowEditClanModal(false);
@@ -567,14 +606,39 @@ export default function Forum({ selectedPod, user }) {
             <div 
               className="subforum-banner" 
               style={{ 
-                background: currentClan.bannerUrl 
+                background: !currentClan.bgVideoUrl && currentClan.bannerUrl 
                   ? `url(${currentClan.bannerUrl}) no-repeat center center / cover`
-                  : currentClan.color || 'var(--color-accent)',
+                  : !currentClan.bgVideoUrl
+                    ? currentClan.color || 'var(--color-accent)'
+                    : 'transparent',
                 position: 'relative',
                 overflow: 'hidden'
               }}
             >
-              <div className="banner-grid-overlay"></div>
+              {currentClan.bgVideoUrl && (
+                <video
+                  key={currentClan.bgVideoUrl}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    minWidth: '100%',
+                    minHeight: '100%',
+                    width: 'auto',
+                    height: 'auto',
+                    objectFit: 'cover',
+                    zIndex: 0
+                  }}
+                >
+                  <source src={currentClan.bgVideoUrl} />
+                </video>
+              )}
+              <div className="banner-grid-overlay" style={{ position: 'relative', zIndex: 1 }}></div>
             </div>
             
             <div className="subforum-header-row">
@@ -582,7 +646,7 @@ export default function Forum({ selectedPod, user }) {
                 <div 
                   className="subforum-avatar-circle" 
                   style={{ 
-                    background: currentClan.logoUrl ? 'transparent' : `linear-gradient(135deg, ${currentClan.color}30, ${currentClan.color}70)`, 
+                    background: (currentClan.logo || currentClan.logoUrl) ? 'transparent' : `linear-gradient(135deg, ${currentClan.color}30, ${currentClan.color}70)`, 
                     border: `4px solid var(--bg-secondary)`, 
                     color: '#fff',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
@@ -592,8 +656,8 @@ export default function Forum({ selectedPod, user }) {
                     justifyContent: 'center'
                   }}
                 >
-                  {currentClan.logoUrl ? (
-                    <img src={currentClan.logoUrl} alt={currentClan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  {(currentClan.logo || currentClan.logoUrl) ? (
+                    <img src={currentClan.logo || currentClan.logoUrl} alt={currentClan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <span className="subforum-avatar-emoji">{currentClan.emoji}</span>
                   )}
@@ -641,8 +705,9 @@ export default function Forum({ selectedPod, user }) {
                             setEditClanDescription(currentClan.description || '');
                             setEditClanColor(currentClan.color || '#ff4500');
                             setEditClanEmoji(currentClan.emoji || '👥');
-                            setEditClanLogoUrl(currentClan.logoUrl || '');
+                            setEditClanLogoUrl(currentClan.logo || currentClan.logoUrl || '');
                             setEditClanBannerUrl(currentClan.bannerUrl || '');
+                            setEditClanBgVideoUrl(currentClan.bgVideoUrl || '');
                             setEditClanRulesText(currentClan.rules ? currentClan.rules.join('\n') : 'Keep posts clinical and recovery-focused.\nAvoid triggering descriptions or explicit detailing.\nPractice active, non-judgmental support.');
                             setEditClanError('');
                             setShowEditClanModal(true);
@@ -703,9 +768,9 @@ export default function Forum({ selectedPod, user }) {
                             onClick={() => setExpandedPost(post)}
                           >
                             <div className="reddit-post-header">
-                              <div className="reddit-post-avatar-placeholder" style={{ background: currentClan.logoUrl ? 'transparent' : `${currentClan.color}20`, border: `1px solid ${currentClan.color}40`, color: currentClan.color, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {currentClan.logoUrl ? (
-                                  <img src={currentClan.logoUrl} alt={currentClan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <div className="reddit-post-avatar-placeholder" style={{ background: (currentClan.logo || currentClan.logoUrl) ? 'transparent' : `${currentClan.color}20`, border: `1px solid ${currentClan.color}40`, color: currentClan.color, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {(currentClan.logo || currentClan.logoUrl) ? (
+                                  <img src={currentClan.logo || currentClan.logoUrl} alt={currentClan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : (
                                   currentClan.emoji
                                 )}
@@ -783,8 +848,8 @@ export default function Forum({ selectedPod, user }) {
                   }}
                 >
                   <span style={{ position: 'absolute', bottom: '8px', left: '16px', fontSize: '1.4rem' }}>
-                    {currentClan.logoUrl ? (
-                      <img src={currentClan.logoUrl} alt={currentClan.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--bg-secondary)', verticalAlign: 'middle' }} />
+                    {(currentClan.logo || currentClan.logoUrl) ? (
+                      <img src={currentClan.logo || currentClan.logoUrl} alt={currentClan.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--bg-secondary)', verticalAlign: 'middle' }} />
                     ) : (
                       currentClan.emoji
                     )}
@@ -916,9 +981,9 @@ export default function Forum({ selectedPod, user }) {
                           onClick={() => setExpandedPost(post)}
                         >
                           <div className="reddit-post-header">
-                            <div className="reddit-post-avatar-placeholder" style={{ background: matchedClan?.logoUrl ? 'transparent' : `${postColor}20`, border: `1px solid ${postColor}40`, color: postColor, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {matchedClan?.logoUrl ? (
-                                <img src={matchedClan.logoUrl} alt={matchedClan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                             <div className="reddit-post-avatar-placeholder" style={{ background: (matchedClan?.logo || matchedClan?.logoUrl) ? 'transparent' : `${postColor}20`, border: `1px solid ${postColor}40`, color: postColor, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {(matchedClan?.logo || matchedClan?.logoUrl) ? (
+                                <img src={matchedClan.logo || matchedClan.logoUrl} alt={matchedClan.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               ) : (
                                 postEmoji
                               )}
@@ -1343,6 +1408,63 @@ export default function Forum({ selectedPod, user }) {
                 )}
               </div>
 
+              {/* BG Video Upload */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>🎬 Background Video (max 5 sec · 16:9 · loops)</label>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    onChange={handleBgVideoChange}
+                    style={{ display: 'none' }}
+                    id="edit-clan-bgvideo-file"
+                  />
+                  <label
+                    htmlFor="edit-clan-bgvideo-file"
+                    style={{
+                      padding: '8px 14px',
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--glass-border)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    🎥 Select Video File
+                  </label>
+                  {editClanBgVideoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setEditClanBgVideoUrl('')}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', fontSize: '0.75rem', cursor: 'pointer' }}
+                    >
+                      Remove Video
+                    </button>
+                  )}
+                </div>
+                {editClanBgVideoUrl && (
+                  <div style={{ marginTop: '10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--glass-border)', aspectRatio: '16/9', maxWidth: '240px' }}>
+                    <video
+                      key={editClanBgVideoUrl}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    >
+                      <source src={editClanBgVideoUrl} />
+                    </video>
+                  </div>
+                )}
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
+                  Upload a short looping clip (≤5 sec). It will be the animated background of this circle's banner. For best results use a 16:9 video.
+                </p>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Description</label>
                 <textarea
@@ -1550,14 +1672,26 @@ export default function Forum({ selectedPod, user }) {
           height: 140px;
           width: 100%;
           position: relative;
+          overflow: hidden;
+          background: #0d0e14;
+        }
+
+        .subforum-banner::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 100%);
+          z-index: 2;
+          pointer-events: none;
         }
 
         .banner-grid-overlay {
           position: absolute;
           inset: 0;
-          opacity: 0.12;
+          opacity: 0.08;
           background-image: radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px);
           background-size: 24px 24px;
+          z-index: 1;
         }
 
         .subforum-header-row {
