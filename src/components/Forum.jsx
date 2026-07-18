@@ -610,9 +610,10 @@ export default function Forum({ selectedPod, user }) {
                   ? `url(${currentClan.bannerUrl}) no-repeat center center / cover`
                   : !currentClan.bgVideoUrl
                     ? currentClan.color || 'var(--color-accent)'
-                    : 'transparent',
+                    : '#0d0e14',
                 position: 'relative',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                height: currentClan.bgVideoUrl ? '220px' : '140px'
               }}
             >
               {currentClan.bgVideoUrl && (
@@ -624,15 +625,13 @@ export default function Forum({ selectedPod, user }) {
                   playsInline
                   style={{
                     position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    minWidth: '100%',
-                    minHeight: '100%',
-                    width: 'auto',
-                    height: 'auto',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
                     objectFit: 'cover',
-                    zIndex: 0
+                    objectPosition: 'center center',
+                    zIndex: 0,
+                    display: 'block'
                   }}
                 >
                   <source src={currentClan.bgVideoUrl} />
