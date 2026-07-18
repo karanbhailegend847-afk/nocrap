@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, ArrowUp, ArrowDown, AlertCircle, BookmarkCheck, Share2, Plus, Check } from 'lucide-react';
 import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
-import { auth } from '../firebase';
+import { auth, storage } from '../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getStreakMetrics, getJoinedClans, toggleJoinClan } from '../utils/storage';
 
 export default function Forum({ selectedPod, user }) {
@@ -39,7 +40,12 @@ export default function Forum({ selectedPod, user }) {
   const [editClanLogoUrl, setEditClanLogoUrl] = useState('');
   const [editClanBannerUrl, setEditClanBannerUrl] = useState('');
   const [editClanBgVideoUrl, setEditClanBgVideoUrl] = useState('');
+  const [bgVideoUploading, setBgVideoUploading] = useState(false);
+  const [bgVideoProgress, setBgVideoProgress] = useState(0);
   const [editClanError, setEditClanError] = useState('');
+  const pendingVideoFileRef = useRef(null);
+  const pendingLogoFileRef = useRef(null);
+  const pendingBannerFileRef = useRef(null);
 
   // Real-time dynamic clan statistics
   const [realMemberCount, setRealMemberCount] = useState(0);
@@ -63,8 +69,8 @@ export default function Forum({ selectedPod, user }) {
         ]);
         setRealMemberCount(mCount);
         setRealOnlineCount(oCount > 0 ? oCount : 1);
-      } catch (err) {
-        console.warn('Error fetching real stats:', err);
+      } catch {
+        // Firestore rules may block these reads for non-members — silently ignore
       }
     };
     fetchStats();
@@ -202,32 +208,28 @@ export default function Forum({ selectedPod, user }) {
   const handleLogoChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 1024 * 1024 * 1) {
-        setEditClanError('Logo image size must be less than 1MB.');
+      if (file.size > 1024 * 1024 * 5) {
+        setEditClanError('Logo image size must be less than 5MB.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditClanLogoUrl(reader.result);
-        setEditClanError('');
-      };
-      reader.readAsDataURL(file);
+      pendingLogoFileRef.current = file;
+      const previewUrl = URL.createObjectURL(file);
+      setEditClanLogoUrl(previewUrl);
+      setEditClanError('');
     }
   };
 
   const handleBannerChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 1024 * 1024 * 1) {
-        setEditClanError('Banner image size must be less than 1MB.');
+      if (file.size > 1024 * 1024 * 5) {
+        setEditClanError('Banner image size must be less than 5MB.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditClanBannerUrl(reader.result);
-        setEditClanError('');
-      };
-      reader.readAsDataURL(file);
+      pendingBannerFileRef.current = file;
+      const previewUrl = URL.createObjectURL(file);
+      setEditClanBannerUrl(previewUrl);
+      setEditClanError('');
     }
   };
 
@@ -239,30 +241,30 @@ export default function Forum({ selectedPod, user }) {
       setEditClanError('Please select a valid video file.');
       return;
     }
-    // Validate file size (max 10MB for a 5s clip)
-    if (file.size > 1024 * 1024 * 10) {
-      setEditClanError('Background video must be less than 10MB.');
+    // Validate file size (max 50MB)
+    if (file.size > 1024 * 1024 * 50) {
+      setEditClanError('Background video must be less than 50MB.');
       return;
     }
     // Validate video duration <= 5 seconds
     const videoEl = document.createElement('video');
-    const url = URL.createObjectURL(file);
-    videoEl.src = url;
+    const objectUrl = URL.createObjectURL(file);
+    videoEl.src = objectUrl;
     videoEl.onloadedmetadata = () => {
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objectUrl);
       if (videoEl.duration > 5) {
-        setEditClanError('Video must be 5 seconds or shorter. This one is ' + Math.round(videoEl.duration) + 's.');
+        setEditClanError(`Video must be 5 seconds or shorter. This one is ${Math.round(videoEl.duration)}s.`);
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditClanBgVideoUrl(reader.result);
-        setEditClanError('');
-      };
-      reader.readAsDataURL(file);
+      // Store file ref — will upload on Save
+      pendingVideoFileRef.current = file;
+      // Show a local preview via object URL (for the modal)
+      const previewUrl = URL.createObjectURL(file);
+      setEditClanBgVideoUrl(previewUrl);
+      setEditClanError('');
     };
     videoEl.onerror = () => {
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objectUrl);
       setEditClanError('Could not read the video file.');
     };
   };
@@ -420,23 +422,111 @@ export default function Forum({ selectedPod, user }) {
       return;
     }
     try {
+      setBgVideoUploading(true);
+      setBgVideoProgress(5);
+
+      let finalLogoUrl = editClanLogoUrl;
+      let finalBannerUrl = editClanBannerUrl;
+      let finalVideoUrl = editClanBgVideoUrl;
+
+      const uid = user?.uid || auth.currentUser?.uid || 'anon';
+
+      // 1. Upload Logo if changed
+      if (pendingLogoFileRef.current) {
+        setBgVideoProgress(10);
+        const file = pendingLogoFileRef.current;
+        const logoRef = ref(storage, `clan-logos/${currentClan.id}/${uid}_${Date.now()}_${file.name}`);
+        const uploadTask = uploadBytesResumable(logoRef, file);
+        await new Promise((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 15) + 10;
+              setBgVideoProgress(pct);
+            },
+            reject,
+            async () => {
+              finalLogoUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              pendingLogoFileRef.current = null;
+              resolve();
+            }
+          );
+        });
+      }
+
+      // 2. Upload Banner if changed
+      if (pendingBannerFileRef.current) {
+        setBgVideoProgress(30);
+        const file = pendingBannerFileRef.current;
+        const bannerRef = ref(storage, `clan-banners/${currentClan.id}/${uid}_${Date.now()}_${file.name}`);
+        const uploadTask = uploadBytesResumable(bannerRef, file);
+        await new Promise((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 20) + 30;
+              setBgVideoProgress(pct);
+            },
+            reject,
+            async () => {
+              finalBannerUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              pendingBannerFileRef.current = null;
+              resolve();
+            }
+          );
+        });
+      }
+
+      // 3. Upload Video if changed
+      if (pendingVideoFileRef.current) {
+        setBgVideoProgress(60);
+        const file = pendingVideoFileRef.current;
+        const videoRef = ref(storage, `clan-videos/${currentClan.id}/${uid}_${Date.now()}_${file.name}`);
+        const uploadTask = uploadBytesResumable(videoRef, file);
+        await new Promise((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 30) + 60;
+              setBgVideoProgress(pct);
+            },
+            reject,
+            async () => {
+              finalVideoUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              pendingVideoFileRef.current = null;
+              resolve();
+            }
+          );
+        });
+      }
+
+      setBgVideoProgress(95);
+
       await updateClanFS(currentClan.id, {
         description: editClanDescription.trim(),
         color: editClanColor,
         emoji: editClanEmoji,
-        logoUrl: editClanLogoUrl,
-        logo: editClanLogoUrl,
-        bannerUrl: editClanBannerUrl,
-        bgVideoUrl: editClanBgVideoUrl,
+        logoUrl: finalLogoUrl,
+        logo: finalLogoUrl,
+        bannerUrl: finalBannerUrl,
+        bgVideoUrl: finalVideoUrl || '',
         rules: editClanRulesText.split('\n').map(r => r.trim()).filter(Boolean)
       });
+
+      setBgVideoProgress(100);
       setShowEditClanModal(false);
+      setBgVideoUploading(false);
+      pendingLogoFileRef.current = null;
+      pendingBannerFileRef.current = null;
+      pendingVideoFileRef.current = null;
       window.dispatchEvent(new CustomEvent('clans-updated'));
     } catch (err) {
       console.error('Update clan error:', err);
-      setEditClanError('Failed to update community settings.');
+      setBgVideoUploading(false);
+      setEditClanError('Failed to update community settings: ' + (err.message || ''));
     }
   };
+
 
   const getRelativeTime = (isoString) => {
     // eslint-disable-next-line react-hooks/purity
@@ -613,7 +703,9 @@ export default function Forum({ selectedPod, user }) {
                     : '#0d0e14',
                 position: 'relative',
                 overflow: 'hidden',
-                height: currentClan.bgVideoUrl ? '220px' : '140px'
+                height: currentClan.bgVideoUrl ? 'auto' : '140px',
+                aspectRatio: currentClan.bgVideoUrl ? '16 / 9' : 'auto',
+                maxHeight: currentClan.bgVideoUrl ? '320px' : 'none'
               }}
             >
               {currentClan.bgVideoUrl && (
@@ -701,6 +793,9 @@ export default function Forum({ selectedPod, user }) {
                           className="reddit-capsule-btn secondary"
                           style={{ borderColor: 'var(--color-warning)', color: 'var(--color-warning)' }}
                           onClick={() => {
+                            pendingLogoFileRef.current = null;
+                            pendingBannerFileRef.current = null;
+                            pendingVideoFileRef.current = null;
                             setEditClanDescription(currentClan.description || '');
                             setEditClanColor(currentClan.color || '#ff4500');
                             setEditClanEmoji(currentClan.emoji || '👥');
@@ -1494,11 +1589,27 @@ export default function Forum({ selectedPod, user }) {
               )}
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowEditClanModal(false)}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{ flex: 1 }} 
+                  onClick={() => {
+                    setShowEditClanModal(false);
+                    pendingLogoFileRef.current = null;
+                    pendingBannerFileRef.current = null;
+                    pendingVideoFileRef.current = null;
+                  }}
+                  disabled={bgVideoUploading}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Save Settings
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  disabled={bgVideoUploading}
+                >
+                  {bgVideoUploading ? `Saving (${bgVideoProgress}%)` : 'Save Settings'}
                 </button>
               </div>
             </form>
