@@ -107,7 +107,6 @@ export default function App() {
         setUser(null);
         setJoinedClans(getJoinedClans());
         setClansList(getClansList());
-        setShowAuthModal(true);
       }
       setAuthReady(true);
     });
