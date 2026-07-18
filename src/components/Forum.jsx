@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageSquare, ArrowUp, ArrowDown, AlertCircle, BookmarkCheck, Share2, Plus, Check } from 'lucide-react';
 import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
-import { auth, storage } from '../firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { auth } from '../firebase';
 import { getStreakMetrics, getJoinedClans, toggleJoinClan } from '../utils/storage';
 
 export default function Forum({ selectedPod, user }) {
@@ -40,12 +39,7 @@ export default function Forum({ selectedPod, user }) {
   const [editClanLogoUrl, setEditClanLogoUrl] = useState('');
   const [editClanBannerUrl, setEditClanBannerUrl] = useState('');
   const [editClanBgVideoUrl, setEditClanBgVideoUrl] = useState('');
-  const [bgVideoUploading, setBgVideoUploading] = useState(false);
-  const [bgVideoProgress, setBgVideoProgress] = useState(0);
   const [editClanError, setEditClanError] = useState('');
-  const pendingVideoFileRef = useRef(null);
-  const pendingLogoFileRef = useRef(null);
-  const pendingBannerFileRef = useRef(null);
 
   // Real-time dynamic clan statistics
   const [realMemberCount, setRealMemberCount] = useState(0);
@@ -205,68 +199,62 @@ export default function Forum({ selectedPod, user }) {
     }
   };
 
-  const handleLogoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 1024 * 1024 * 5) {
-        setEditClanError('Logo image size must be less than 5MB.');
-        return;
-      }
-      pendingLogoFileRef.current = file;
-      const previewUrl = URL.createObjectURL(file);
-      setEditClanLogoUrl(previewUrl);
-      setEditClanError('');
+  // Compress image to base64 string, max ~200KB to fit in Firestore
+  const readImageAsBase64 = (file, maxBytes = 200 * 1024) => new Promise((resolve, reject) => {
+    if (file.size > maxBytes) {
+      // Use a canvas to compress
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const scale = Math.sqrt(maxBytes / file.size);
+        canvas.width = Math.floor(width * scale);
+        canvas.height = Math.floor(height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = reject;
+      img.src = url;
+    } else {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     }
-  };
+  });
 
-  const handleBannerChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 1024 * 1024 * 5) {
-        setEditClanError('Banner image size must be less than 5MB.');
-        return;
-      }
-      pendingBannerFileRef.current = file;
-      const previewUrl = URL.createObjectURL(file);
-      setEditClanBannerUrl(previewUrl);
-      setEditClanError('');
-    }
-  };
-
-  const handleBgVideoChange = (e) => {
+  const handleLogoChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    // Validate file type
-    if (!file.type.startsWith('video/')) {
-      setEditClanError('Please select a valid video file.');
+    if (!file.type.startsWith('image/')) {
+      setEditClanError('Please select a valid image file for the logo.');
       return;
     }
-    // Validate file size (max 50MB)
-    if (file.size > 1024 * 1024 * 50) {
-      setEditClanError('Background video must be less than 50MB.');
-      return;
-    }
-    // Validate video duration <= 5 seconds
-    const videoEl = document.createElement('video');
-    const objectUrl = URL.createObjectURL(file);
-    videoEl.src = objectUrl;
-    videoEl.onloadedmetadata = () => {
-      URL.revokeObjectURL(objectUrl);
-      if (videoEl.duration > 5) {
-        setEditClanError(`Video must be 5 seconds or shorter. This one is ${Math.round(videoEl.duration)}s.`);
-        return;
-      }
-      // Store file ref — will upload on Save
-      pendingVideoFileRef.current = file;
-      // Show a local preview via object URL (for the modal)
-      const previewUrl = URL.createObjectURL(file);
-      setEditClanBgVideoUrl(previewUrl);
+    try {
+      const base64 = await readImageAsBase64(file, 200 * 1024);
+      setEditClanLogoUrl(base64);
       setEditClanError('');
-    };
-    videoEl.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      setEditClanError('Could not read the video file.');
-    };
+    } catch {
+      setEditClanError('Could not read the logo image.');
+    }
+  };
+
+  const handleBannerChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setEditClanError('Please select a valid image file for the banner.');
+      return;
+    }
+    try {
+      const base64 = await readImageAsBase64(file, 400 * 1024);
+      setEditClanBannerUrl(base64);
+      setEditClanError('');
+    } catch {
+      setEditClanError('Could not read the banner image.');
+    }
   };
 
   const triggerCreatePost = () => {
@@ -421,108 +409,26 @@ export default function Forum({ selectedPod, user }) {
       setEditClanError('Description cannot be empty.');
       return;
     }
+    // Validate video URL if provided
+    if (editClanBgVideoUrl && !/^https?:\/\//i.test(editClanBgVideoUrl)) {
+      setEditClanError('Video URL must start with http:// or https://');
+      return;
+    }
     try {
-      setBgVideoUploading(true);
-      setBgVideoProgress(5);
-
-      let finalLogoUrl = editClanLogoUrl;
-      let finalBannerUrl = editClanBannerUrl;
-      let finalVideoUrl = editClanBgVideoUrl;
-
-      const uid = user?.uid || auth.currentUser?.uid || 'anon';
-
-      // 1. Upload Logo if changed
-      if (pendingLogoFileRef.current) {
-        setBgVideoProgress(10);
-        const file = pendingLogoFileRef.current;
-        const logoRef = ref(storage, `clan-logos/${currentClan.id}/${uid}_${Date.now()}_${file.name}`);
-        const uploadTask = uploadBytesResumable(logoRef, file);
-        await new Promise((resolve, reject) => {
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 15) + 10;
-              setBgVideoProgress(pct);
-            },
-            reject,
-            async () => {
-              finalLogoUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              pendingLogoFileRef.current = null;
-              resolve();
-            }
-          );
-        });
-      }
-
-      // 2. Upload Banner if changed
-      if (pendingBannerFileRef.current) {
-        setBgVideoProgress(30);
-        const file = pendingBannerFileRef.current;
-        const bannerRef = ref(storage, `clan-banners/${currentClan.id}/${uid}_${Date.now()}_${file.name}`);
-        const uploadTask = uploadBytesResumable(bannerRef, file);
-        await new Promise((resolve, reject) => {
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 20) + 30;
-              setBgVideoProgress(pct);
-            },
-            reject,
-            async () => {
-              finalBannerUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              pendingBannerFileRef.current = null;
-              resolve();
-            }
-          );
-        });
-      }
-
-      // 3. Upload Video if changed
-      if (pendingVideoFileRef.current) {
-        setBgVideoProgress(60);
-        const file = pendingVideoFileRef.current;
-        const videoRef = ref(storage, `clan-videos/${currentClan.id}/${uid}_${Date.now()}_${file.name}`);
-        const uploadTask = uploadBytesResumable(videoRef, file);
-        await new Promise((resolve, reject) => {
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 30) + 60;
-              setBgVideoProgress(pct);
-            },
-            reject,
-            async () => {
-              finalVideoUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              pendingVideoFileRef.current = null;
-              resolve();
-            }
-          );
-        });
-      }
-
-      setBgVideoProgress(95);
-
       await updateClanFS(currentClan.id, {
         description: editClanDescription.trim(),
         color: editClanColor,
         emoji: editClanEmoji,
-        logoUrl: finalLogoUrl,
-        logo: finalLogoUrl,
-        bannerUrl: finalBannerUrl,
-        bgVideoUrl: finalVideoUrl || '',
+        logoUrl: editClanLogoUrl,
+        logo: editClanLogoUrl,
+        bannerUrl: editClanBannerUrl,
+        bgVideoUrl: editClanBgVideoUrl.trim() || '',
         rules: editClanRulesText.split('\n').map(r => r.trim()).filter(Boolean)
       });
-
-      setBgVideoProgress(100);
       setShowEditClanModal(false);
-      setBgVideoUploading(false);
-      pendingLogoFileRef.current = null;
-      pendingBannerFileRef.current = null;
-      pendingVideoFileRef.current = null;
       window.dispatchEvent(new CustomEvent('clans-updated'));
     } catch (err) {
       console.error('Update clan error:', err);
-      setBgVideoUploading(false);
       setEditClanError('Failed to update community settings: ' + (err.message || ''));
     }
   };
@@ -1502,45 +1408,28 @@ export default function Forum({ selectedPod, user }) {
                 )}
               </div>
 
-              {/* BG Video Upload */}
+              {/* BG Video URL */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>🎬 Background Video (max 5 sec · 16:9 · loops)</label>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>🎬 Background Video URL (16:9 · loops)</label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input
-                    type="file"
-                    accept="video/*"
-                    onChange={handleBgVideoChange}
-                    style={{ display: 'none' }}
-                    id="edit-clan-bgvideo-file"
+                    type="url"
+                    value={editClanBgVideoUrl}
+                    onChange={e => setEditClanBgVideoUrl(e.target.value)}
+                    placeholder="https://example.com/my-clip.mp4"
+                    style={{ flex: 1, padding: '9px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '8px', outline: 'none', fontSize: '0.82rem' }}
                   />
-                  <label
-                    htmlFor="edit-clan-bgvideo-file"
-                    style={{
-                      padding: '8px 14px',
-                      background: 'var(--bg-tertiary)',
-                      border: '1px solid var(--glass-border)',
-                      color: 'white',
-                      borderRadius: '8px',
-                      fontSize: '0.8rem',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    🎥 Select Video File
-                  </label>
                   {editClanBgVideoUrl && (
                     <button
                       type="button"
                       onClick={() => setEditClanBgVideoUrl('')}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', fontSize: '0.75rem', cursor: 'pointer' }}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--color-danger)', fontSize: '0.75rem', cursor: 'pointer', flexShrink: 0 }}
                     >
-                      Remove Video
+                      ✕ Clear
                     </button>
                   )}
                 </div>
-                {editClanBgVideoUrl && (
+                {editClanBgVideoUrl && /^https?:\///i.test(editClanBgVideoUrl) && (
                   <div style={{ marginTop: '10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--glass-border)', aspectRatio: '16/9', maxWidth: '240px' }}>
                     <video
                       key={editClanBgVideoUrl}
@@ -1555,7 +1444,7 @@ export default function Forum({ selectedPod, user }) {
                   </div>
                 )}
                 <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.4 }}>
-                  Upload a short looping clip (≤5 sec). It will be the animated background of this circle's banner. For best results use a 16:9 video.
+                  Paste a direct link to an .mp4 or .webm video (max 5 sec, 16:9). It will loop silently as the banner background.
                 </p>
               </div>
 
@@ -1593,23 +1482,16 @@ export default function Forum({ selectedPod, user }) {
                   type="button" 
                   className="btn btn-secondary" 
                   style={{ flex: 1 }} 
-                  onClick={() => {
-                    setShowEditClanModal(false);
-                    pendingLogoFileRef.current = null;
-                    pendingBannerFileRef.current = null;
-                    pendingVideoFileRef.current = null;
-                  }}
-                  disabled={bgVideoUploading}
+                  onClick={() => setShowEditClanModal(false)}
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
                   className="btn btn-primary" 
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  disabled={bgVideoUploading}
+                  style={{ flex: 1 }}
                 >
-                  {bgVideoUploading ? `Saving (${bgVideoProgress}%)` : 'Save Settings'}
+                  Save Settings
                 </button>
               </div>
             </form>
