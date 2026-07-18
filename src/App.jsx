@@ -12,7 +12,7 @@ import Notifications from './components/Notifications';
 import Profile from './components/Profile';
 import CreateClanModal from './components/CreateClanModal';
 import { initializeDatabase, getData, getStreakMetrics, logSlip, seedUserFromFirebase, getJoinedClans, toggleJoinClan, getClansList } from './utils/storage';
-import { getClansListFS, getUserClansFS } from './utils/firestore';
+import { getClansListFS, getUserClansFS, getOrCreateUser } from './utils/firestore';
 
 export default function App() {
   const [user, setUser] = useState(null);          // local USER record
@@ -75,7 +75,13 @@ export default function App() {
     // Firebase auth state listener
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const localUser = seedUserFromFirebase(firebaseUser);
+        let dbUser = null;
+        try {
+          dbUser = await getOrCreateUser(firebaseUser.uid, firebaseUser.email || '', firebaseUser.displayName || '');
+        } catch (err) {
+          console.warn('Error getting or creating user in Firestore:', err);
+        }
+        const localUser = seedUserFromFirebase(firebaseUser, dbUser?.username || '');
         setUser(localUser);
         const metrics = getStreakMetrics();
         setUserStreak(metrics.current);
@@ -156,8 +162,14 @@ export default function App() {
     };
   }, []);
 
-  const handleAuthSuccess = (firebaseUser) => {
-    const localUser = seedUserFromFirebase(firebaseUser);
+  const handleAuthSuccess = async (firebaseUser) => {
+    let dbUser = null;
+    try {
+      dbUser = await getOrCreateUser(firebaseUser.uid, firebaseUser.email || '', firebaseUser.displayName || '');
+    } catch (err) {
+      console.warn('Error fetching user on auth success:', err);
+    }
+    const localUser = seedUserFromFirebase(firebaseUser, dbUser?.username || '');
     setUser(localUser);
     loadAppStates();
     setShowAuthModal(false);

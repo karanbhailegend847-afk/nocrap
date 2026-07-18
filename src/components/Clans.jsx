@@ -361,7 +361,7 @@ export default function Clans({ userStreak, user }) {
                   onClick={() => handleCardClick(clan)}
                 >
                   <div className="explore-card-top">
-                    <div className="explore-card-avatar" style={{ background: `${clan.color}20`, border: `1px solid ${clan.color}40` }}>
+                    <div className="explore-card-avatar" style={{ background: `${clan.color}20`, border: `1px solid ${clan.color}40`, overflow: 'hidden' }}>
                       {(clan.logo || clan.logoUrl)
                       ? <img src={clan.logo || clan.logoUrl} alt={clan.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       : <span style={{ color: clan.color }} className="explore-card-emoji">{clan.emoji}</span>

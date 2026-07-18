@@ -18,25 +18,40 @@ import {
   serverTimestamp,
   runTransaction
 } from 'firebase/firestore';
+import { generateRoastUsername } from './usernameGenerator';
 
 // Firestore Service Module
 
 export { db };
 
-export async function getOrCreateUser(uid) {
+export async function getOrCreateUser(uid, email = '', displayName = '') {
   const userRef = doc(db, 'users', uid);
   const userDoc = await getDoc(userRef);
 
+  let username = '';
+
   if (!userDoc.exists()) {
+    const isRealNameOrEmail = !displayName || displayName.includes(' ') || displayName.includes('@') || displayName === 'Warrior' || displayName === 'Anonymous';
+    username = isRealNameOrEmail ? generateRoastUsername() : displayName;
+
     const newUser = {
-      username: 'Anonymous',
-      email: uid, // Fallback if displayName isn't available
+      uid,
+      username,
+      email: email || uid,
       joinedAt: new Date().toISOString()
     };
     await setDoc(userRef, newUser);
+    return newUser;
+  } else {
+    const data = userDoc.data();
+    const isInvalid = !data.username || data.username === 'Anonymous' || data.username.includes('@') || data.username === 'Warrior';
+    if (isInvalid) {
+      const fixedUsername = generateRoastUsername();
+      await updateDoc(userRef, { username: fixedUsername });
+      data.username = fixedUsername;
+    }
+    return data;
   }
-
-  return (await getDoc(userRef)).data();
 }
 
 export async function updateUserStreak(uid, streakData) {
@@ -289,6 +304,7 @@ export async function seedClansToFirestore(clans) {
     return setDoc(clanRef, {
       name: clan.name,
       emoji: clan.emoji || '👥',
+      logo: clan.logo || clan.logoUrl || '',
       category: clan.category || 'General',
       description: clan.description || '',
       stats: clan.stats || '',

@@ -6,6 +6,7 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
+import { generateRoastUsername } from '../utils/usernameGenerator';
 
 /* ── Google "G" SVG icon ─────────────────────────────────────────────────── */
 function GoogleIcon() {
@@ -24,6 +25,9 @@ export default function AuthScreen({ onAuthSuccess, initialMode = 'signin' }) {
 
   useEffect(() => {
     setMode(initialMode);
+    if (initialMode === 'signup') {
+      setUsername(generateRoastUsername());
+    }
   }, [initialMode]);
 
   const [email, setEmail] = useState('');
@@ -31,6 +35,12 @@ export default function AuthScreen({ onAuthSuccess, initialMode = 'signin' }) {
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'signup' && !username) {
+      setUsername(generateRoastUsername());
+    }
+  }, [mode]);
 
   const clearError = () => setError('');
 
@@ -121,17 +131,43 @@ export default function AuthScreen({ onAuthSuccess, initialMode = 'signin' }) {
           <form onSubmit={handleEmailAuth} className="auth-email-form">
             {mode === 'signup' && (
               <div className="auth-input-group">
-                <label>Username</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ margin: 0 }}>Roasted Username</label>
+                  <button
+                    type="button"
+                    onClick={() => setUsername(generateRoastUsername())}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#ff4500',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: 0
+                    }}
+                  >
+                    🎲 Roll New Roast
+                  </button>
+                </div>
                 <input
                   type="text"
-                  placeholder="Choose a username"
                   value={username}
-                  onChange={e => setUsername(e.target.value)}
+                  readOnly
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    color: '#ff4500',
+                    fontWeight: 'bold',
+                    cursor: 'not-allowed'
+                  }}
                   required
-                  minLength={3}
-                  maxLength={20}
-                  autoComplete="username"
                 />
+                <span style={{ fontSize: '0.7rem', color: '#8a8a93', marginTop: '4px', display: 'block' }}>
+                  NoCrap usernames are randomly assigned roasts. Deal with it, you can't change it.
+                </span>
               </div>
             )}
             <div className="auth-input-group">

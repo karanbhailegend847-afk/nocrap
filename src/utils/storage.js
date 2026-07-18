@@ -184,12 +184,12 @@ export function saveData(key, data) {
 
 // Seeds/updates the local USER record from a Firebase user object.
 // Called after every successful sign-in so downstream components work unchanged.
-export function seedUserFromFirebase(firebaseUser) {
+export function seedUserFromFirebase(firebaseUser, firestoreUsername = '') {
   const existing = getData('USER') || {};
   const username =
+    firestoreUsername ||
     existing.username ||
-    firebaseUser.displayName?.replace(/\s+/g, '_') ||
-    firebaseUser.email?.split('@')[0] ||
+    (firebaseUser.displayName && !firebaseUser.displayName.includes(' ') && !firebaseUser.displayName.includes('@') ? firebaseUser.displayName : null) ||
     'Warrior';
 
   const updated = {
@@ -198,7 +198,7 @@ export function seedUserFromFirebase(firebaseUser) {
     username,
     email:       firebaseUser.email,
     photoURL:    firebaseUser.photoURL || existing.photoURL || null,
-    displayName: firebaseUser.displayName || username,
+    displayName: username,
     joinedAt:    existing.joinedAt || new Date().toISOString(),
   };
   saveData('USER', updated);
