@@ -699,9 +699,6 @@ export default function Forum({ selectedPod, user }) {
                           className="reddit-capsule-btn secondary"
                           style={{ borderColor: 'var(--color-warning)', color: 'var(--color-warning)' }}
                           onClick={() => {
-                            pendingLogoFileRef.current = null;
-                            pendingBannerFileRef.current = null;
-                            pendingVideoFileRef.current = null;
                             setEditClanDescription(currentClan.description || '');
                             setEditClanColor(currentClan.color || '#ff4500');
                             setEditClanEmoji(currentClan.emoji || '👥');
