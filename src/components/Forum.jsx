@@ -1426,7 +1426,7 @@ export default function Forum({ selectedPod, user }) {
                     </button>
                   )}
                 </div>
-                {editClanBgVideoUrl && /^https?:\///i.test(editClanBgVideoUrl) && (
+                {editClanBgVideoUrl && editClanBgVideoUrl.startsWith('http') && (
                   <div style={{ marginTop: '10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--glass-border)', aspectRatio: '16/9', maxWidth: '240px' }}>
                     <video
                       key={editClanBgVideoUrl}
