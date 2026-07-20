@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, ArrowUp, ArrowDown, AlertCircle, BookmarkCheck, Share2, Plus, Check } from 'lucide-react';
-import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
+import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getUserVotesFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
 import { auth } from '../firebase';
 import { getStreakMetrics, getJoinedClans, toggleJoinClan } from '../utils/storage';
 
@@ -127,6 +127,15 @@ export default function Forum({ selectedPod, user }) {
     window.addEventListener('clans-updated', handleClansUpdate);
     return () => window.removeEventListener('clans-updated', handleClansUpdate);
   }, [selectedPod, sortOrder, searchQuery, user]);
+
+  // Load this user's persisted votes from Firestore (survives page refresh)
+  useEffect(() => {
+    const uid = user?.uid || auth.currentUser?.uid;
+    if (!uid) return;
+    getUserVotesFS(uid)
+      .then(votes => setVotedPosts(votes))
+      .catch(() => {}); // silently fail — UI falls back to unvoted state
+  }, [user]);
 
   // Load comments when a post is expanded
   useEffect(() => {
@@ -336,34 +345,64 @@ export default function Forum({ selectedPod, user }) {
   };
 
   const handleVote = async (postId, direction) => {
-    const prevVote = votedPosts[postId];
     const uid = user?.uid || auth.currentUser?.uid;
     if (!uid) {
       window.dispatchEvent(new CustomEvent('trigger-auth'));
       return;
     }
+
+    const prevVote = votedPosts[postId];
+    const optimisticVote = prevVote === direction ? null : direction;
+
+    // Optimistic UI — update counts immediately so it feels instant
+    setVotedPosts(prev => {
+      const copy = { ...prev };
+      if (optimisticVote) copy[postId] = optimisticVote;
+      else delete copy[postId];
+      return copy;
+    });
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      let up = p.upvotes ?? 0;
+      let dn = p.downvotes ?? 0;
+      if (prevVote === 'up') up--;
+      if (prevVote === 'down') dn--;
+      if (optimisticVote === 'up') up++;
+      if (optimisticVote === 'down') dn++;
+      return { ...p, upvotes: up, downvotes: dn };
+    }));
+    if (expandedPost?.id === postId) {
+      setExpandedPost(prev => {
+        if (!prev) return prev;
+        let up = prev.upvotes ?? 0;
+        let dn = prev.downvotes ?? 0;
+        if (prevVote === 'up') up--;
+        if (prevVote === 'down') dn--;
+        if (optimisticVote === 'up') up++;
+        if (optimisticVote === 'down') dn++;
+        return { ...prev, upvotes: up, downvotes: dn };
+      });
+    }
+
     try {
-      if (prevVote === direction) {
-        await votePostFS(postId, direction === 'up' ? 'down' : 'up');
-        setVotedPosts(prev => {
-          const copy = { ...prev };
-          delete copy[postId];
-          return copy;
-        });
-      } else {
-        await votePostFS(postId, direction);
-        if (prevVote) {
-          await votePostFS(postId, direction);
-        }
-        setVotedPosts(prev => ({ ...prev, [postId]: direction }));
-      }
+      // Transaction in Firestore enforces one-vote-per-user server-side
+      await votePostFS(postId, uid, direction);
+      // Re-sync from server to get accurate counts
       await loadPosts();
-      if (expandedPost && expandedPost.id === postId) {
-        const freshPost = await getPostsFS('all').then(posts => posts.find(p => p.id === postId));
-        setExpandedPost(freshPost);
+      if (expandedPost?.id === postId) {
+        const fresh = await getPostsFS('all').then(all => all.find(p => p.id === postId));
+        if (fresh) setExpandedPost(fresh);
       }
     } catch (err) {
       console.error('Vote error:', err);
+      // Revert optimistic update on failure
+      setVotedPosts(prev => {
+        const copy = { ...prev };
+        if (prevVote) copy[postId] = prevVote;
+        else delete copy[postId];
+        return copy;
+      });
+      await loadPosts();
     }
   };
 

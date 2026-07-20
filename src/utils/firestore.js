@@ -234,14 +234,53 @@ export async function getPostCommentsFS(postId) {
   return comments;
 }
 
-export async function votePostFS(postId, direction) {
-  const postRef = doc(db, 'posts', postId);
-  if (direction === 'up') {
-    await updateDoc(postRef, { upvotes: increment(1) });
-  } else {
-    await updateDoc(postRef, { downvotes: increment(1) });
-  }
+export async function votePostFS(postId, uid, direction) {
+  const voteRef  = doc(db, 'postVotes', `${postId}_${uid}`);
+  const postRef  = doc(db, 'posts', postId);
+
+  let resultingVote = null; // null = removed, 'up'/'down' = active
+
+  await runTransaction(db, async (tx) => {
+    const [voteSnap] = await Promise.all([tx.get(voteRef)]);
+    const existing = voteSnap.exists() ? voteSnap.data().direction : null;
+
+    if (existing === direction) {
+      // Same vote → undo (toggle off)
+      tx.delete(voteRef);
+      tx.update(postRef, {
+        [direction === 'up' ? 'upvotes' : 'downvotes']: increment(-1)
+      });
+      resultingVote = null;
+    } else {
+      // New or switched vote
+      if (existing) {
+        // Undo the old vote first
+        tx.update(postRef, {
+          [existing === 'up' ? 'upvotes' : 'downvotes']: increment(-1)
+        });
+      }
+      tx.set(voteRef, { postId, uid, direction });
+      tx.update(postRef, {
+        [direction === 'up' ? 'upvotes' : 'downvotes']: increment(1)
+      });
+      resultingVote = direction;
+    }
+  });
+
+  return resultingVote; // caller can use this to update UI state
 }
+
+// Load all votes a user has cast (to restore UI state on page load)
+export async function getUserVotesFS(uid) {
+  const q = query(collection(db, 'postVotes'), where('uid', '==', uid));
+  const snap = await getDocs(q);
+  const votes = {};
+  snap.docs.forEach(d => {
+    votes[d.data().postId] = d.data().direction;
+  });
+  return votes;
+}
+
 
 // Helpful comment (mark as helpful)
 export async function markHelpfulFS(postId, commentId) {
