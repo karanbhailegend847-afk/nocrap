@@ -768,3 +768,43 @@ export function createCustomClan(clanData) {
   saveData('CLANS_LIST', clans);
   return { success: true, clan: newClan };
 }
+
+// ─── POST VOTE TRACKING (localStorage, keyed by uid+postId) ───
+const VOTE_KEY = 'nocrap_post_votes';
+
+function _loadVoteMap() {
+  try { return JSON.parse(localStorage.getItem(VOTE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function _saveVoteMap(map) {
+  try { localStorage.setItem(VOTE_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+}
+
+/** Returns 'up' | 'down' | null for a given user+post */
+export function getLocalVote(uid, postId) {
+  if (!uid || !postId) return null;
+  return _loadVoteMap()[`${uid}_${postId}`] || null;
+}
+
+/** Saves the user's vote locally. Pass null to remove. */
+export function setLocalVote(uid, postId, direction) {
+  const map = _loadVoteMap();
+  const key = `${uid}_${postId}`;
+  if (direction === null) delete map[key];
+  else map[key] = direction;
+  _saveVoteMap(map);
+}
+
+/** Returns a map of { postId: 'up'|'down' } for all posts this user voted on */
+export function getAllLocalVotes(uid) {
+  if (!uid) return {};
+  const map = _loadVoteMap();
+  const result = {};
+  const prefix = `${uid}_`;
+  for (const key of Object.keys(map)) {
+    if (key.startsWith(prefix)) {
+      result[key.slice(prefix.length)] = map[key];
+    }
+  }
+  return result;
+}

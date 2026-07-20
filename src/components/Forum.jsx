@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, ArrowUp, ArrowDown, AlertCircle, BookmarkCheck, Share2, Plus, Check } from 'lucide-react';
-import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getUserVotesFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
+import { getPostsFS, createPostFS, addCommentFS, getPostCommentsFS, votePostFS, getClansListFS, getUserClansFS, joinClanFS, leaveClanFS, markHelpfulFS, updateClanFS, DEFAULT_CLANS, markUserActiveInClanFS, getClanMemberCountFS, getClanActiveUsersCountFS } from '../utils/firestore';
 import { auth } from '../firebase';
-import { getStreakMetrics, getJoinedClans, toggleJoinClan } from '../utils/storage';
+import { getStreakMetrics, getJoinedClans, toggleJoinClan, getAllLocalVotes, setLocalVote } from '../utils/storage';
 
 export default function Forum({ selectedPod, user }) {
   const [posts, setPosts] = useState([]);
@@ -127,16 +127,16 @@ export default function Forum({ selectedPod, user }) {
     window.addEventListener('clans-updated', handleClansUpdate);
     return () => window.removeEventListener('clans-updated', handleClansUpdate);
   }, [selectedPod, sortOrder, searchQuery, user]);
-
-  // Load this user's persisted votes from Firestore (survives page refresh)
+  // Load this user's persisted votes from localStorage (survives page refresh)
   useEffect(() => {
     const uid = user?.uid || auth.currentUser?.uid;
-    if (!uid) return;
-    getUserVotesFS(uid)
-      .then(votes => setVotedPosts(votes))
-      .catch(() => {}); // silently fail — UI falls back to unvoted state
+    if (!uid) {
+      setVotedPosts({});
+      return;
+    }
+    const votes = getAllLocalVotes(uid);
+    setVotedPosts(votes);
   }, [user]);
-
   // Load comments when a post is expanded
   useEffect(() => {
     if (expandedPost) {
@@ -365,8 +365,8 @@ export default function Forum({ selectedPod, user }) {
       if (p.id !== postId) return p;
       let up = p.upvotes ?? 0;
       let dn = p.downvotes ?? 0;
-      if (prevVote === 'up') up--;
-      if (prevVote === 'down') dn--;
+      if (prevVote === 'up') up = Math.max(0, up - 1);
+      if (prevVote === 'down') dn = Math.max(0, dn - 1);
       if (optimisticVote === 'up') up++;
       if (optimisticVote === 'down') dn++;
       return { ...p, upvotes: up, downvotes: dn };
@@ -376,8 +376,8 @@ export default function Forum({ selectedPod, user }) {
         if (!prev) return prev;
         let up = prev.upvotes ?? 0;
         let dn = prev.downvotes ?? 0;
-        if (prevVote === 'up') up--;
-        if (prevVote === 'down') dn--;
+        if (prevVote === 'up') up = Math.max(0, up - 1);
+        if (prevVote === 'down') dn = Math.max(0, dn - 1);
         if (optimisticVote === 'up') up++;
         if (optimisticVote === 'down') dn++;
         return { ...prev, upvotes: up, downvotes: dn };
@@ -385,8 +385,19 @@ export default function Forum({ selectedPod, user }) {
     }
 
     try {
-      // Transaction in Firestore enforces one-vote-per-user server-side
-      await votePostFS(postId, uid, direction);
+      // Calculate Firestore delta values based on prevVote and optimisticVote
+      let upvoteDelta = 0;
+      let downvoteDelta = 0;
+      if (prevVote === 'up') upvoteDelta--;
+      if (prevVote === 'down') downvoteDelta--;
+      if (optimisticVote === 'up') upvoteDelta++;
+      if (optimisticVote === 'down') downvoteDelta++;
+
+      // Update Firestore
+      await votePostFS(postId, upvoteDelta, downvoteDelta);
+      // Save vote status in localStorage
+      setLocalVote(uid, postId, optimisticVote);
+
       // Re-sync from server to get accurate counts
       await loadPosts();
       if (expandedPost?.id === postId) {
