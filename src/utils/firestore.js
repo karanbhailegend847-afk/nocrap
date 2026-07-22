@@ -243,7 +243,32 @@ export async function votePostFS(postId, upvoteChange, downvoteChange) {
   if (downvoteChange !== 0) {
     updates.downvotes = increment(downvoteChange);
   }
-  await updateDoc(postRef, updates);
+  try {
+    await updateDoc(postRef, updates);
+  } catch (err) {
+    // DEVELOPER NOTE: If you see a permission-denied error here, add this rule
+    // to your Firestore security rules for the posts collection:
+    //
+    //   match /posts/{postId} {
+    //     allow update: if request.auth != null
+    //       && request.resource.data.diff(resource.data).affectedKeys()
+    //           .hasOnly(['upvotes', 'downvotes']);
+    //   }
+    //
+    // This allows any logged-in user to update only the vote counts.
+    if (err.code === 'permission-denied') {
+      console.error(
+        '[NoCrap] Vote blocked by Firestore rules.\n' +
+        'Add this to your Firestore rules console:\n\n' +
+        'match /posts/{postId} {\n' +
+        '  allow update: if request.auth != null\n' +
+        '    && request.resource.data.diff(resource.data)\n' +
+        '        .affectedKeys().hasOnly(["upvotes", "downvotes"]);\n' +
+        '}\n'
+      );
+    }
+    throw err;
+  }
 }
 
 
