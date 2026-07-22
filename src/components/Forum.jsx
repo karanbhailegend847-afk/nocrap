@@ -393,17 +393,10 @@ export default function Forum({ selectedPod, user }) {
       if (optimisticVote === 'up') upvoteDelta++;
       if (optimisticVote === 'down') downvoteDelta++;
 
-      // Update Firestore
+      // Fire-and-forget to Firestore + save to localStorage — no re-fetch needed
+      // (Optimistic update above is already correct)
       await votePostFS(postId, upvoteDelta, downvoteDelta);
-      // Save vote status in localStorage
       setLocalVote(uid, postId, optimisticVote);
-
-      // Re-sync from server to get accurate counts
-      await loadPosts();
-      if (expandedPost?.id === postId) {
-        const fresh = await getPostsFS('all').then(all => all.find(p => p.id === postId));
-        if (fresh) setExpandedPost(fresh);
-      }
     } catch (err) {
       console.error('Vote error:', err);
       // Revert optimistic update on failure
@@ -413,9 +406,20 @@ export default function Forum({ selectedPod, user }) {
         else delete copy[postId];
         return copy;
       });
-      await loadPosts();
+      setPosts(prev => prev.map(p => {
+        if (p.id !== postId) return p;
+        let up = p.upvotes ?? 0;
+        let dn = p.downvotes ?? 0;
+        // Undo optimistic changes
+        if (optimisticVote === 'up') up = Math.max(0, up - 1);
+        if (optimisticVote === 'down') dn = Math.max(0, dn - 1);
+        if (prevVote === 'up') up++;
+        if (prevVote === 'down') dn++;
+        return { ...p, upvotes: up, downvotes: dn };
+      }));
     }
   };
+
 
   const handleMarkHelpful = async (postId, commentId) => {
     try {
